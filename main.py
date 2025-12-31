@@ -11,7 +11,7 @@ API_ID = int(os.getenv("API_ID", 36062585))
 API_HASH = os.getenv("API_HASH", "27af3370413767173feb169bec5065f9")
 SESSION_STRING = os.getenv("SESSION_STRING") 
 # IMPORTANT: Put the @username of the bot you want to message here
-TARGET_BOT = "@TheUsernameOfYourBot" 
+TARGET_BOT = "@FkerKeyBot" 
 
 app = Flask(__name__)
 
