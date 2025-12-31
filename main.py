@@ -18,13 +18,15 @@ MY_USERNAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "Waiting for first grow..."
-bot_logs = ["Verified Counting System Active."]
+last_bot_reply = "Ready for Grow..."
+bot_logs = ["Lifetime Point Tracking Active."]
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
 waits_yesterday = 0
 points_today = 0
+points_yesterday = 0
+points_lifetime = 0  # NEW: Cumulative points across all days
 is_blocked = False 
 is_running = True 
 next_run_time = None
@@ -49,7 +51,7 @@ def index():
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <title>PH Turbo Tracker</title>
+        <title>PH Turbo Admin</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             :root { --bg: #0f172a; --card: #1e293b; --acc: #38bdf8; --text: #f8fafc; }
@@ -65,6 +67,7 @@ def index():
             .btn { padding: 14px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.8rem; }
             .log-box { background: #000; height: 160px; overflow-y: auto; padding: 12px; font-family: monospace; font-size: 0.75rem; border-radius: 12px; color: #4ade80; border: 1px solid #334155; }
             .reply { background: #0f172a; padding: 12px; border-radius: 12px; font-size: 0.85rem; border-left: 4px solid var(--acc); margin: 15px 0; white-space: pre-wrap; }
+            .lifetime-box { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid var(--acc); }
         </style>
     </head>
     <body>
@@ -79,11 +82,16 @@ def index():
             </div>
 
             <div class="stats-grid">
+                <div class="stat-box lifetime-box" style="grid-column: span 2; text-align: center;">
+                    <span class="label" style="color: var(--acc);">Total Pts (All Time)</span>
+                    <span id="pl" class="stat-val" style="font-size: 1.8rem;">0</span>
+                </div>
+                <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
+                <div class="stat-box"><span class="label">Pts Yesterday</span><span id="py" class="stat-val" style="color:#94a3b8">+0</span></div>
                 <div class="stat-box"><span class="label">Grow Today</span><span id="gt" class="stat-val">0</span></div>
+                <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val">0</span></div>
                 <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
-                <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val" style="color:#64748b">0</span></div>
-                <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val" style="color:#64748b">0</span></div>
-                <div class="stat-box" style="grid-column: span 2;"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
+                <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val">0</span></div>
             </div>
 
             <div class="label">Bot Output</div>
@@ -102,6 +110,8 @@ def index():
                     document.getElementById('wt').innerText = d.wt;
                     document.getElementById('wy').innerText = d.wy;
                     document.getElementById('pt').innerText = '+' + d.pt;
+                    document.getElementById('py').innerText = '+' + d.py;
+                    document.getElementById('pl').innerText = d.pl.toLocaleString(); // Total Pts
                     document.getElementById('reply').innerText = d.reply;
                     document.getElementById('status').innerText = d.status;
                     document.getElementById('status').style.color = d.color;
@@ -128,7 +138,9 @@ def get_data():
     return jsonify({
         "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
         "wt": waits_today, "wy": waits_yesterday,
-        "pt": points_today, "reply": last_bot_reply,
+        "pt": points_today, "py": points_yesterday, 
+        "pl": points_lifetime, # NEW: Added to API
+        "reply": last_bot_reply,
         "status": s, "color": c, "logs": bot_logs
     })
 
@@ -142,12 +154,12 @@ def restart_bot():
     is_blocked = False; is_running = True; force_trigger = True; return "OK"
 
 async def main_logic():
-    global last_bot_reply, total_grows_today, total_grows_yesterday, waits_today, waits_yesterday, points_today, is_blocked, is_running, current_day, force_trigger, next_run_time
+    global last_bot_reply, total_grows_today, total_grows_yesterday, waits_today, waits_yesterday, points_today, points_yesterday, points_lifetime, is_blocked, is_running, current_day, force_trigger, next_run_time
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     
     @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
-        global last_bot_reply, points_today, total_grows_today, waits_today
+        global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today
         try:
             await client(functions.messages.ReadMentionsRequest(peer=GROUP_TARGET))
             await client.send_read_acknowledge(event.chat_id, event.message)
@@ -158,24 +170,29 @@ async def main_logic():
             if MY_USERNAME.lower() in msg.lower() and "BATTLE" not in msg.upper():
                 last_bot_reply = msg
                 
-                # --- NEW VERIFIED COUNTING LOGIC ---
                 if "please wait" in msg.lower():
                     waits_today += 1
-                    add_log("⚠️ Throttled: Wait Counted.")
                 elif "GROW SUCCESS" in msg.upper() or "Gained:" in msg:
                     total_grows_today += 1
                     match = re.search(r'Gained:\s*([+-]\d+)', msg)
                     if match:
-                        points_today += int(match.group(1))
-                    add_log(f"✅ Verified Grow #{total_grows_today}")
+                        gained = int(match.group(1))
+                        points_today += gained
+                        points_lifetime += gained # Update lifetime total
 
     async with client:
         while True:
             ph_now = get_ph_time()
             if ph_now.day != current_day:
-                total_grows_yesterday, waits_yesterday = total_grows_today, waits_today
-                total_grows_today, waits_today, points_today = 0, 0, 0
+                total_grows_yesterday = total_grows_today
+                waits_yesterday = waits_today
+                points_yesterday = points_today
+                
+                total_grows_today = 0
+                waits_today = 0
+                points_today = 0
                 current_day = ph_now.day
+                add_log("Midnight transition complete.")
 
             if is_running:
                 try:
@@ -183,8 +200,6 @@ async def main_logic():
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(GROUP_TARGET, "/grow")
                         is_blocked = False
-                        # WE NO LONGER ADD +1 HERE. We wait for the bot's reply.
-                        add_log("Sent /grow. Waiting for verification...")
                 except Exception as e:
                     is_blocked = True; add_log(f"Error: {str(e)[:15]}")
 
