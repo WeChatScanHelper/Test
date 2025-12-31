@@ -15,9 +15,10 @@ TARGET_BOT = "@FkerKeyBot"
 
 # --- GLOBAL TRACKING ---
 last_sent_time = None
-last_bot_reply = "Waiting for first reply..."
+next_run_time = None
+last_bot_reply = "Waiting for initial connection..."
 bot_log = []
-bot_status_msg = "Initializing..."
+bot_status_msg = "Starting engine..."
 total_grows_today = 0
 
 app = Flask(__name__)
@@ -30,79 +31,72 @@ def home():
     ph_now = get_ph_time()
     ph_hour = ph_now.hour
     
-    if not (7 <= ph_hour < 23):
-        status_html = "<span style='color: #ff4d4d;'>🔴 SLEEPING (Night Mode)</span>"
-    else:
-        status_html = f"<span style='color: #2ecc71;'>🟢 ACTIVE</span> - <small>{bot_status_msg}</small>"
-        
-    time_info = "N/A"
-    if last_sent_time:
-        diff = ph_now - last_sent_time
-        sec = int(diff.total_seconds())
-        time_info = f"{sec}s ago" if sec < 60 else f"{sec // 60}m ago"
+    # Status and Countdown Logic
+    is_night = not (7 <= ph_hour < 23)
+    status_color = "#ff4d4d" if is_night else "#2ecc71"
+    status_text = "🔴 SLEEPING (Night Mode)" if is_night else "🟢 ACTIVE"
+    
+    countdown_text = "Resumes at 07:00 AM PHT"
+    if not is_night:
+        if next_run_time:
+            diff = int((next_run_time - ph_now).total_seconds())
+            countdown_text = f"Next Grow in: {diff}s" if diff > 0 else "Sending command..."
+        else:
+            countdown_text = "Initializing next cycle..."
 
-    recent_logs = "".join([f"<li style='margin-bottom:8px; border-bottom:1px solid #444; padding-bottom:4px;'>{l}</li>" for l in bot_log[-8:]])
+    # Formatting Logs
+    log_html = "".join([f"<div style='border-bottom:1px solid #333; padding:4px 0;'>{l}</div>" for l in bot_log[-10:]])
 
     return f"""
+    <!DOCTYPE html>
     <html>
-        <head>
-            <title>PH Bot Dashboard</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f0f2f5; margin: 0; padding: 15px; }}
-                .card {{ background: white; max-width: 450px; margin: auto; padding: 20px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }}
-                .stat-box {{ background: #f8f9fa; padding: 15px; border-radius: 12px; margin: 15px 0; border-left: 5px solid #3498db; text-align: left; }}
-                
-                /* FIXED: This section now allows full text wrapping */
-                .bot-msg {{ 
-                    background: #e3f2fd; 
-                    padding: 12px; 
-                    border-radius: 8px; 
-                    color: #1565c0; 
-                    font-size: 0.95em;
-                    line-height: 1.4;
-                    white-space: pre-wrap;       /* Keeps line breaks from the bot */
-                    word-wrap: break-word;       /* Breaks long words if needed */
-                    overflow-wrap: break-word;
-                    word-break: normal;
-                }}
-                
-                .grid {{ display: flex; justify-content: space-around; margin: 20px 0; border-top: 1px solid #eee; padding-top: 15px; }}
-                .log-box {{ text-align: left; background: #222; color: #00ff00; padding: 15px; border-radius: 10px; font-family: 'Courier New', monospace; font-size: 0.85em; }}
-                h2 {{ color: #1a1a1a; margin-top: 0; }}
-            </style>
-        </head>
-        <body>
+    <head>
+        <title>PH Bot Ultimate</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta http-equiv="refresh" content="5">
+        <style>
+            body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: white; margin: 0; padding: 15px; }}
+            .container {{ max-width: 500px; margin: auto; }}
+            .card {{ background: #1e293b; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #334155; }}
+            .status-badge {{ display: inline-block; padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 0.8em; background: rgba(0,0,0,0.3); color: {status_color}; border: 1px solid {status_color}; }}
+            .timer-box {{ font-size: 1.8em; font-weight: bold; margin: 20px 0; color: #38bdf8; text-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }}
+            .reply-box {{ background: #0f172a; padding: 15px; border-radius: 12px; text-align: left; font-size: 0.9em; border-left: 4px solid #38bdf8; white-space: pre-wrap; }}
+            .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }}
+            .stat-item {{ background: #334155; padding: 10px; border-radius: 10px; }}
+            .log-area {{ background: #000; color: #4ade80; font-family: monospace; padding: 15px; border-radius: 10px; font-size: 0.75em; text-align: left; overflow: hidden; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
             <div class="card">
-                <h2>🇵🇭 Bot Dashboard</h2>
-                <div style="margin-bottom: 10px;"><b>Status:</b> {status_html}</div>
-                <div style="font-size: 0.9em; color: #666;">PH Time: {ph_now.strftime('%I:%M:%S %p')}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="margin:0;">PH Ultimate</h2>
+                    <div class="status-badge">{status_text}</div>
+                </div>
                 
-                <div class="stat-box">
-                    <b style="display:block; margin-bottom:5px;">Last Message from Bot:</b>
-                    <div class="bot-msg">{last_bot_reply}</div>
+                <div class="timer-box">{countdown_text}</div>
+
+                <div class="stats-grid">
+                    <div class="stat-item"><small style="color:#94a3b8;">Today's Count</small><br><span style="font-size:1.4em;">{total_grows_today}</span></div>
+                    <div class="stat-item"><small style="color:#94a3b8;">Local Time</small><br><span style="font-size:1.1em;">{ph_now.strftime('%I:%M %p')}</span></div>
                 </div>
 
-                <div class="grid">
-                    <div><small>Grows Today</small><br><b style="font-size: 1.4em; color: #2ecc71;">{total_grows_today}</b></div>
-                    <div><small>Last Action</small><br><b style="font-size: 1.4em; color: #3498db;">{time_info}</b></div>
-                </div>
+                <div style="text-align:left; margin-bottom:5px;"><small style="color:#94a3b8;">LATEST BOT RESPONSE:</small></div>
+                <div class="reply-box">{last_bot_reply}</div>
 
-                <div class="log-box">
-                    <div style="color: #888; font-size: 0.8em; margin-bottom: 10px;">ACTIVITY LOG</div>
-                    <ul style="list-style: none; padding: 0; margin: 0;">{recent_logs if recent_logs else "Waiting..."}</ul>
-                </div>
+                <div style="text-align:left; margin: 20px 0 5px 0;"><small style="color:#94a3b8;">SYSTEM LOGS:</small></div>
+                <div class="log-area">{log_html if log_html else "Waiting for activity..."}</div>
             </div>
-        </body>
+        </div>
+    </body>
     </html>
     """
 
 def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 async def main_logic():
-    global last_sent_time, last_bot_reply, bot_log, bot_status_msg, total_grows_today
+    global last_sent_time, next_run_time, last_bot_reply, bot_log, total_grows_today
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     
     async with client:
@@ -111,39 +105,40 @@ async def main_logic():
             if 7 <= ph_now.hour < 23:
                 try:
                     async with client.conversation(TARGET_BOT, timeout=None) as conv:
-                        bot_status_msg = "Typing..."
+                        # 1. Typing Phase
                         async with client.action(TARGET_BOT, 'typing'):
-                            await asyncio.sleep(random.uniform(3, 5))
+                            await asyncio.sleep(random.uniform(3, 7))
+                            
+                            # 2. Send Command
                             await conv.send_message("/grow")
                             
-                            bot_status_msg = "Waiting for reply..."
+                            # 3. Wait Phase (Downtime Protected)
                             response = await conv.get_response()
                             
-                            # Reading simulation
-                            await asyncio.sleep(random.uniform(2, 4))
+                            # 4. Read Phase (Human Delay)
+                            await asyncio.sleep(random.uniform(2, 5))
                             await client.send_read_acknowledge(TARGET_BOT, response)
                             
-                            # Global Updates
+                            # 5. Global Updates
                             last_sent_time = get_ph_time()
-                            last_bot_reply = response.text  # Removed the truncation logic
+                            last_bot_reply = response.text
                             total_grows_today += 1
-                            
-                            bot_log.append(f"🟢 Successfully grew at {last_sent_time.strftime('%I:%M %p')}")
-                            if len(bot_log) > 15: bot_log.pop(0)
+                            bot_log.append(f"[{last_sent_time.strftime('%H:%M')}] SUCCESS: Grow completed.")
 
-                        bot_status_msg = "Idle"
-                
                 except Exception as e:
-                    bot_status_msg = "Error. Retrying..."
+                    bot_log.append(f"[{get_ph_time().strftime('%H:%M')}] ERROR: {str(e)[:30]}")
                     await asyncio.sleep(30)
                 
-                # Randomized Wait
-                wait_time = random.randint(45, 90)
-                if random.random() < 0.05: # 5% Human Break
-                    wait_time = random.randint(300, 600)
-                await asyncio.sleep(wait_time)
+                # 6. Calculate Next Interval
+                wait_seconds = random.randint(45, 90)
+                if random.random() < 0.05: # Human break
+                    wait_seconds = random.randint(300, 600)
+                    bot_log.append(f"[{get_ph_time().strftime('%H:%M')}] System taking coffee break.")
+                
+                next_run_time = get_ph_time() + timedelta(seconds=wait_seconds)
+                await asyncio.sleep(wait_seconds)
             else:
-                bot_status_msg = "Sleeping"
+                next_run_time = None
                 await asyncio.sleep(600)
 
 if __name__ == "__main__":
