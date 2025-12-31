@@ -18,8 +18,8 @@ MY_USERNAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "System Stopped."
-bot_logs = ["Log clearing enabled. Total Control active."]
+last_bot_reply = "System Ready."
+bot_logs = ["Dashboard Restored. All counters active."]
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
@@ -28,7 +28,7 @@ points_today = 0
 points_yesterday = 0
 points_lifetime = 0  
 is_blocked = False 
-is_running = False  # Starts paused for safety
+is_running = False  
 next_run_time = None
 force_trigger = False 
 current_day = datetime.now(timezone(timedelta(hours=8))).day
@@ -44,7 +44,7 @@ def add_log(text):
     bot_logs.insert(0, f"[{timestamp}] {text}")
     if len(bot_logs) > 50: bot_logs.pop()
 
-# --- WEB UI (AJAX) ---
+# --- WEB UI ---
 @app.route('/')
 def index():
     return """
@@ -59,17 +59,14 @@ def index():
             .card { width: 100%; max-width: 500px; background: var(--card); padding: 20px; border-radius: 24px; border: 1px solid #334155; }
             .timer { font-size: 3.5rem; font-weight: 900; text-align: center; margin: 5px 0; }
             .status-badge { font-size: 0.7rem; font-weight: 800; text-align: center; margin-bottom: 10px; text-transform: uppercase; }
-            .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
-            .stat-box { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 16px; border: 1px solid #334155; }
-            .stat-val { font-size: 1.3rem; font-weight: 800; display: block; }
-            .label { font-size: 0.6rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; }
+            .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
+            .stat-box { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 12px; border: 1px solid #334155; }
+            .stat-val { font-size: 1.2rem; font-weight: 800; display: block; }
+            .label { font-size: 0.55rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; }
             .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
-            .btn { padding: 14px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.8rem; transition: 0.1s; display: flex; align-items: center; justify-content: center; }
-            .btn:active { transform: scale(0.95); }
-            .btn-restart { background: var(--acc); }
-            .btn-clear { background: #64748b; }
-            .log-box { background: #000; height: 160px; overflow-y: auto; padding: 12px; font-family: monospace; font-size: 0.75rem; border-radius: 12px; color: #4ade80; border: 1px solid #334155; }
-            .reply { background: #0f172a; padding: 12px; border-radius: 12px; font-size: 0.85rem; border-left: 4px solid var(--acc); margin: 15px 0; white-space: pre-wrap; }
+            .btn { padding: 12px; border-radius: 10px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.75rem; }
+            .log-box { background: #000; height: 140px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
+            .reply { background: #0f172a; padding: 10px; border-radius: 10px; font-size: 0.8rem; border-left: 4px solid var(--acc); margin: 12px 0; white-space: pre-wrap; }
         </style>
     </head>
     <body>
@@ -80,22 +77,26 @@ def index():
             <div class="btn-group">
                 <button onclick="fetch('/start')" class="btn" style="background:#059669">▶ RESUME</button>
                 <button onclick="fetch('/stop')" class="btn" style="background:#dc2626">■ STOP</button>
-                <button onclick="fetch('/restart')" class="btn btn-restart">🔄 FORCE GROW</button>
-                <button onclick="fetch('/clear_logs')" class="btn btn-clear">🧹 CLEAR LOGS</button>
+                <button onclick="fetch('/restart')" class="btn" style="background:#38bdf8">🔄 FORCE</button>
+                <button onclick="fetch('/clear_logs')" class="btn" style="background:#64748b">🧹 CLEAR</button>
             </div>
 
             <div class="stats-grid">
                 <div class="stat-box" style="grid-column: span 2; text-align: center; border-color: var(--acc);">
-                    <span class="label" style="color: var(--acc);">Total Pts (All Time)</span>
-                    <span id="pl" class="stat-val" style="font-size: 1.8rem;">0</span>
+                    <span class="label" style="color: var(--acc);">Lifetime Total Points</span>
+                    <span id="pl" class="stat-val" style="font-size: 1.6rem;">0</span>
                 </div>
                 <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
-                <div class="stat-box"><span class="label">Pts Yesterday</span><span id="py" class="stat-val" style="color:#94a3b8">+0</span></div>
+                <div class="stat-box"><span class="label">Pts Yesterday</span><span id="py" class="stat-val">+0</span></div>
+                
                 <div class="stat-box"><span class="label">Grow Today</span><span id="gt" class="stat-val">0</span></div>
+                <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val">0</span></div>
+                
                 <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
+                <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val">0</span></div>
             </div>
 
-            <div class="label">Bot Output</div>
+            <div class="label">Latest Bot Response</div>
             <div class="reply" id="reply">...</div>
             <div class="log-box" id="logs"></div>
         </div>
@@ -107,7 +108,9 @@ def index():
                     const d = await res.json();
                     document.getElementById('timer').innerText = d.timer;
                     document.getElementById('gt').innerText = d.gt;
+                    document.getElementById('gy').innerText = d.gy;
                     document.getElementById('wt').innerText = d.wt;
+                    document.getElementById('wy').innerText = d.wy;
                     document.getElementById('pt').innerText = '+' + d.pt;
                     document.getElementById('py').innerText = '+' + d.py;
                     document.getElementById('pl').innerText = d.pl.toLocaleString();
@@ -127,7 +130,7 @@ def index():
 def get_data():
     ph_now = get_ph_time()
     t_str = "--"
-    if not is_running: s, c, t_str = "🛑 FULLY STOPPED", "#f87171", "OFF"
+    if not is_running: s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
     elif is_blocked: s, c, t_str = "MUTED", "#fbbf24", "WAIT"
     else:
         s, c = "🟢 ACTIVE", "#34d399"
@@ -135,45 +138,30 @@ def get_data():
             diff = int((next_run_time - ph_now).total_seconds())
             t_str = f"{max(0, diff)}s"
     return jsonify({
-        "timer": t_str, "gt": total_grows_today, "pt": points_today, 
-        "py": points_yesterday, "pl": points_lifetime, "wt": waits_today,
+        "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
+        "pt": points_today, "py": points_yesterday, "pl": points_lifetime, 
+        "wt": waits_today, "wy": waits_yesterday,
         "reply": last_bot_reply, "status": s, "color": c, "logs": bot_logs
     })
 
+# Routes for Start, Stop, Restart, Clear Logs (omitted for brevity, same as previous)
 @app.route('/start')
-def start_bot(): 
-    global is_running; is_running = True
-    add_log("System Online.")
-    return "OK"
-
+def start_bot(): global is_running; is_running = True; add_log("System Online."); return "OK"
 @app.route('/stop')
-def stop_bot(): 
-    global is_running, next_run_time
-    is_running = False
-    next_run_time = None
-    add_log("System Offline.")
-    return "OK"
-
+def stop_bot(): global is_running, next_run_time; is_running = False; next_run_time = None; add_log("System Offline."); return "OK"
 @app.route('/restart')
-def restart_bot():
-    global is_blocked, force_trigger, is_running
-    is_blocked = False; is_running = True; force_trigger = True
-    add_log("Manual Grow Triggered."); return "OK"
-
+def restart_bot(): global is_blocked, force_trigger, is_running; is_blocked = False; is_running = True; force_trigger = True; add_log("Forced Grow sent."); return "OK"
 @app.route('/clear_logs')
-def clear_logs():
-    global bot_logs
-    bot_logs = ["Logs cleared by user."]
-    return "OK"
+def clear_logs(): global bot_logs; bot_logs = ["Logs cleared."]; return "OK"
 
 async def main_logic():
-    global last_bot_reply, total_grows_today, total_grows_yesterday, waits_today, points_today, points_lifetime, is_blocked, is_running, current_day, force_trigger, next_run_time
+    global last_bot_reply, total_grows_today, total_grows_yesterday, waits_today, waits_yesterday, points_today, points_yesterday, points_lifetime, is_blocked, is_running, current_day, force_trigger, next_run_time
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     
     @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
         global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today
-        if not is_running: return # Ignore messages when stopped
+        if not is_running: return 
 
         if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text
@@ -185,17 +173,18 @@ async def main_logic():
                     total_grows_today += 1
                     match = re.search(r'Gained:\s*([+-]\d+)', msg)
                     if match:
-                        gained = int(match.group(1))
-                        points_today += gained
-                        points_lifetime += gained
+                        val = int(match.group(1))
+                        points_today += val
+                        points_lifetime += val
 
     async with client:
         while True:
             ph_now = get_ph_time()
             if ph_now.day != current_day:
-                total_grows_yesterday, points_yesterday = total_grows_today, points_today
+                total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
                 total_grows_today, waits_today, points_today = 0, 0, 0
                 current_day = ph_now.day
+                add_log("Stats moved to yesterday.")
 
             if is_running:
                 try:
@@ -203,13 +192,13 @@ async def main_logic():
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(GROUP_TARGET, "/grow")
                         is_blocked = False
-                except Exception as e:
-                    is_blocked = True; add_log(f"Error: {str(e)[:15]}")
+                except Exception: is_blocked = True
 
                 next_run_time = get_ph_time() + timedelta(seconds=35)
                 for _ in range(35):
-                    if force_trigger: force_trigger = False; break
-                    if not is_running: break
+                    if force_trigger or not is_running: 
+                        force_trigger = False
+                        break
                     await asyncio.sleep(1)
             else:
                 await asyncio.sleep(1)
