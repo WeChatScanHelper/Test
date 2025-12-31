@@ -18,14 +18,13 @@ MY_USERNAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "System Standby..."
-bot_logs = ["Split Tracking Active: Success vs. Wait."]
+last_bot_reply = "Waiting for first grow..."
+bot_logs = ["Verified Counting System Active."]
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
 waits_yesterday = 0
 points_today = 0
-points_yesterday = 0
 is_blocked = False 
 is_running = True 
 next_run_time = None
@@ -41,10 +40,9 @@ def add_log(text):
     global bot_logs
     timestamp = get_ph_time().strftime('%H:%M:%S')
     bot_logs.insert(0, f"[{timestamp}] {text}")
-    if len(bot_logs) > 50: bot_logs.pop()
+    if len(bot_logs) > 40: bot_logs.pop()
 
 # --- WEB UI ---
-
 @app.route('/')
 def index():
     return """
@@ -55,18 +53,16 @@ def index():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             :root { --bg: #0f172a; --card: #1e293b; --acc: #38bdf8; --text: #f8fafc; }
-            body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; justify-content: center; }
+            body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; justify-content: center; }
             .card { width: 100%; max-width: 500px; background: var(--card); padding: 20px; border-radius: 24px; border: 1px solid #334155; }
-            .timer { font-size: 3.5rem; font-weight: 900; text-align: center; margin: 5px 0; color: var(--text); }
+            .timer { font-size: 3.5rem; font-weight: 900; text-align: center; margin: 5px 0; }
             .status-badge { font-size: 0.7rem; font-weight: 800; text-align: center; margin-bottom: 10px; text-transform: uppercase; }
             .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
             .stat-box { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 16px; border: 1px solid #334155; }
             .stat-val { font-size: 1.3rem; font-weight: 800; display: block; }
-            .label { font-size: 0.6rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+            .label { font-size: 0.6rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; }
             .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
-            .btn { padding: 14px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; color: white; transition: 0.1s; font-size: 0.8rem; }
-            .btn:active { transform: scale(0.95); }
-            .btn-restart { background: var(--acc); grid-column: span 2; }
+            .btn { padding: 14px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.8rem; }
             .log-box { background: #000; height: 160px; overflow-y: auto; padding: 12px; font-family: monospace; font-size: 0.75rem; border-radius: 12px; color: #4ade80; border: 1px solid #334155; }
             .reply { background: #0f172a; padding: 12px; border-radius: 12px; font-size: 0.85rem; border-left: 4px solid var(--acc); margin: 15px 0; white-space: pre-wrap; }
         </style>
@@ -77,23 +73,21 @@ def index():
             <div class="timer" id="timer">--</div>
             
             <div class="btn-group">
-                <button onclick="fetch('/start')" class="btn" style="background:#059669">RESUME</button>
-                <button onclick="fetch('/stop')" class="btn" style="background:#dc2626">PAUSE</button>
-                <button onclick="fetch('/restart')" class="btn btn-restart">🔄 FORCE RESTART / UNMUTE</button>
+                <button onclick="fetch('/start')" class="btn" style="background:#059669">START</button>
+                <button onclick="fetch('/stop')" class="btn" style="background:#dc2626">STOP</button>
+                <button onclick="fetch('/restart')" class="btn" style="background:#38bdf8; grid-column: span 2;">🔄 FORCE RESTART / UNMUTE</button>
             </div>
 
             <div class="stats-grid">
                 <div class="stat-box"><span class="label">Grow Today</span><span id="gt" class="stat-val">0</span></div>
-                <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val" style="color:#64748b">0</span></div>
                 <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
+                <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val" style="color:#64748b">0</span></div>
                 <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val" style="color:#64748b">0</span></div>
                 <div class="stat-box" style="grid-column: span 2;"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
             </div>
 
             <div class="label">Bot Output</div>
             <div class="reply" id="reply">...</div>
-
-            <div class="label">Live Logs</div>
             <div class="log-box" id="logs"></div>
         </div>
 
@@ -125,7 +119,7 @@ def get_data():
     ph_now = get_ph_time()
     t_str = "--"
     if not is_running: s, c, t_str = "PAUSED", "#f87171", "OFF"
-    elif is_blocked: s, c, t_str = "MUTED / ERROR", "#fbbf24", "WAIT"
+    elif is_blocked: s, c, t_str = "MUTED", "#fbbf24", "WAIT"
     else:
         s, c = "ACTIVE", "#34d399"
         if next_run_time:
@@ -164,24 +158,22 @@ async def main_logic():
             if MY_USERNAME.lower() in msg.lower() and "BATTLE" not in msg.upper():
                 last_bot_reply = msg
                 
-                # SEPARATE TRACKING LOGIC
+                # --- NEW VERIFIED COUNTING LOGIC ---
                 if "please wait" in msg.lower():
                     waits_today += 1
-                    # Correct the grow count because we added it when sending
-                    if total_grows_today > 0: total_grows_today -= 1 
-                    add_log("⚠️ Wait detected: Count separated.")
-                else:
-                    # Success Path
+                    add_log("⚠️ Throttled: Wait Counted.")
+                elif "GROW SUCCESS" in msg.upper() or "Gained:" in msg:
+                    total_grows_today += 1
                     match = re.search(r'Gained:\s*([+-]\d+)', msg)
                     if match:
                         points_today += int(match.group(1))
-                        add_log(f"✅ Success: +{match.group(1)} pts")
+                    add_log(f"✅ Verified Grow #{total_grows_today}")
 
     async with client:
         while True:
             ph_now = get_ph_time()
             if ph_now.day != current_day:
-                total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
+                total_grows_yesterday, waits_yesterday = total_grows_today, waits_today
                 total_grows_today, waits_today, points_today = 0, 0, 0
                 current_day = ph_now.day
 
@@ -191,7 +183,8 @@ async def main_logic():
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(GROUP_TARGET, "/grow")
                         is_blocked = False
-                        total_grows_today += 1 # Assume success until proven wait
+                        # WE NO LONGER ADD +1 HERE. We wait for the bot's reply.
+                        add_log("Sent /grow. Waiting for verification...")
                 except Exception as e:
                     is_blocked = True; add_log(f"Error: {str(e)[:15]}")
 
