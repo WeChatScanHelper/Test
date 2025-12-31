@@ -18,10 +18,12 @@ MY_USERNAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "System Ready. Monitoring..."
-bot_logs = ["Smart Validation Active (Bypassing 'Please wait' counts)."]
+last_bot_reply = "System Standby..."
+bot_logs = ["Split Tracking Active: Success vs. Wait."]
 total_grows_today = 0
 total_grows_yesterday = 0
+waits_today = 0
+waits_yesterday = 0
 points_today = 0
 points_yesterday = 0
 is_blocked = False 
@@ -41,7 +43,7 @@ def add_log(text):
     bot_logs.insert(0, f"[{timestamp}] {text}")
     if len(bot_logs) > 50: bot_logs.pop()
 
-# --- WEB UI (Single Page, AJAX) ---
+# --- WEB UI ---
 
 @app.route('/')
 def index():
@@ -49,48 +51,49 @@ def index():
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <title>PH Smart Turbo</title>
+        <title>PH Turbo Tracker</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             :root { --bg: #0f172a; --card: #1e293b; --acc: #38bdf8; --text: #f8fafc; }
             body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; justify-content: center; }
-            .card { width: 100%; max-width: 480px; background: var(--card); padding: 20px; border-radius: 24px; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3); }
-            .timer { font-size: 4rem; font-weight: 900; text-align: center; margin: 5px 0; letter-spacing: -2px; }
-            .status-badge { font-size: 0.7rem; font-weight: 800; letter-spacing: 1px; text-align: center; margin-bottom: 10px; }
+            .card { width: 100%; max-width: 500px; background: var(--card); padding: 20px; border-radius: 24px; border: 1px solid #334155; }
+            .timer { font-size: 3.5rem; font-weight: 900; text-align: center; margin: 5px 0; color: var(--text); }
+            .status-badge { font-size: 0.7rem; font-weight: 800; text-align: center; margin-bottom: 10px; text-transform: uppercase; }
             .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
             .stat-box { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 16px; border: 1px solid #334155; }
-            .stat-val { font-size: 1.4rem; font-weight: 800; display: block; }
-            .label { font-size: 0.65rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; }
-            .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-            .btn { padding: 14px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; color: white; text-decoration: none; text-align: center; transition: 0.2s; }
+            .stat-val { font-size: 1.3rem; font-weight: 800; display: block; }
+            .label { font-size: 0.6rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+            .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+            .btn { padding: 14px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; color: white; transition: 0.1s; font-size: 0.8rem; }
             .btn:active { transform: scale(0.95); }
             .btn-restart { background: var(--acc); grid-column: span 2; }
-            .log-box { background: #000; height: 160px; overflow-y: auto; padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; border-radius: 12px; color: #4ade80; border: 1px solid #334155; }
-            .reply { background: #0f172a; padding: 12px; border-radius: 12px; font-size: 0.85rem; border-left: 4px solid var(--acc); margin: 15px 0; white-space: pre-wrap; line-height: 1.4; }
+            .log-box { background: #000; height: 160px; overflow-y: auto; padding: 12px; font-family: monospace; font-size: 0.75rem; border-radius: 12px; color: #4ade80; border: 1px solid #334155; }
+            .reply { background: #0f172a; padding: 12px; border-radius: 12px; font-size: 0.85rem; border-left: 4px solid var(--acc); margin: 15px 0; white-space: pre-wrap; }
         </style>
     </head>
     <body>
         <div class="card">
-            <div id="status" class="status-badge">LOADING...</div>
+            <div id="status" class="status-badge">...</div>
             <div class="timer" id="timer">--</div>
             
             <div class="btn-group">
-                <button onclick="fetch('/start')" class="btn" style="background:#059669">START</button>
-                <button onclick="fetch('/stop')" class="btn" style="background:#dc2626">STOP</button>
+                <button onclick="fetch('/start')" class="btn" style="background:#059669">RESUME</button>
+                <button onclick="fetch('/stop')" class="btn" style="background:#dc2626">PAUSE</button>
                 <button onclick="fetch('/restart')" class="btn btn-restart">🔄 FORCE RESTART / UNMUTE</button>
             </div>
 
             <div class="stats-grid">
                 <div class="stat-box"><span class="label">Grow Today</span><span id="gt" class="stat-val">0</span></div>
                 <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val" style="color:#64748b">0</span></div>
-                <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
-                <div class="stat-box"><span class="label">Pts Yesterday</span><span id="py" class="stat-val" style="color:#64748b">+0</span></div>
+                <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
+                <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val" style="color:#64748b">0</span></div>
+                <div class="stat-box" style="grid-column: span 2;"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
             </div>
 
-            <div class="label" style="margin-left:5px">Latest Result</div>
+            <div class="label">Bot Output</div>
             <div class="reply" id="reply">...</div>
 
-            <div class="label" style="margin-left:5px">System Logs</div>
+            <div class="label">Live Logs</div>
             <div class="log-box" id="logs"></div>
         </div>
 
@@ -102,8 +105,9 @@ def index():
                     document.getElementById('timer').innerText = d.timer;
                     document.getElementById('gt').innerText = d.gt;
                     document.getElementById('gy').innerText = d.gy;
+                    document.getElementById('wt').innerText = d.wt;
+                    document.getElementById('wy').innerText = d.wy;
                     document.getElementById('pt').innerText = '+' + d.pt;
-                    document.getElementById('py').innerText = '+' + d.py;
                     document.getElementById('reply').innerText = d.reply;
                     document.getElementById('status').innerText = d.status;
                     document.getElementById('status').style.color = d.color;
@@ -129,28 +133,27 @@ def get_data():
             t_str = f"{max(0, diff)}s"
     return jsonify({
         "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
-        "pt": points_today, "py": points_yesterday, "reply": last_bot_reply,
+        "wt": waits_today, "wy": waits_yesterday,
+        "pt": points_today, "reply": last_bot_reply,
         "status": s, "color": c, "logs": bot_logs
     })
 
-# Standard Start/Stop/Restart Routes
 @app.route('/start')
-def start_bot(): global is_running; is_running = True; add_log("Resume clicked"); return "OK"
+def start_bot(): global is_running; is_running = True; return "OK"
 @app.route('/stop')
-def stop_bot(): global is_running; is_running = False; add_log("Pause clicked"); return "OK"
+def stop_bot(): global is_running; is_running = False; return "OK"
 @app.route('/restart')
 def restart_bot():
     global is_blocked, force_trigger, is_running
-    is_blocked = False; is_running = True; force_trigger = True
-    add_log("Manual Override: Sent /grow immediately"); return "OK"
+    is_blocked = False; is_running = True; force_trigger = True; return "OK"
 
 async def main_logic():
-    global last_bot_reply, total_grows_today, total_grows_yesterday, points_today, points_yesterday, is_blocked, is_running, current_day, force_trigger, next_run_time
+    global last_bot_reply, total_grows_today, total_grows_yesterday, waits_today, waits_yesterday, points_today, is_blocked, is_running, current_day, force_trigger, next_run_time
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     
     @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
-        global last_bot_reply, points_today, total_grows_today
+        global last_bot_reply, points_today, total_grows_today, waits_today
         try:
             await client(functions.messages.ReadMentionsRequest(peer=GROUP_TARGET))
             await client.send_read_acknowledge(event.chat_id, event.message)
@@ -159,28 +162,27 @@ async def main_logic():
         if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text
             if MY_USERNAME.lower() in msg.lower() and "BATTLE" not in msg.upper():
+                last_bot_reply = msg
                 
-                # --- NEW VALIDATION LOGIC ---
+                # SEPARATE TRACKING LOGIC
                 if "please wait" in msg.lower():
-                    last_bot_reply = msg
-                    add_log("Bot Busy: 'Please wait' detected. Entry ignored.")
-                    # We subtract the increment we added when we sent the message
-                    if total_grows_today > 0:
-                        total_grows_today -= 1 
+                    waits_today += 1
+                    # Correct the grow count because we added it when sending
+                    if total_grows_today > 0: total_grows_today -= 1 
+                    add_log("⚠️ Wait detected: Count separated.")
                 else:
-                    last_bot_reply = msg
-                    # Points Extraction
+                    # Success Path
                     match = re.search(r'Gained:\s*([+-]\d+)', msg)
                     if match:
                         points_today += int(match.group(1))
-                        add_log(f"Success: Points Added {match.group(1)}")
+                        add_log(f"✅ Success: +{match.group(1)} pts")
 
     async with client:
         while True:
             ph_now = get_ph_time()
             if ph_now.day != current_day:
-                total_grows_yesterday, points_yesterday = total_grows_today, points_today
-                total_grows_today, points_today = 0, 0
+                total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
+                total_grows_today, waits_today, points_today = 0, 0, 0
                 current_day = ph_now.day
 
             if is_running:
@@ -189,8 +191,7 @@ async def main_logic():
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(GROUP_TARGET, "/grow")
                         is_blocked = False
-                        total_grows_today += 1 # Added here, but handler will subtract if it's a "Wait" reply
-                        add_log(f"Sent /grow. Pending check...")
+                        total_grows_today += 1 # Assume success until proven wait
                 except Exception as e:
                     is_blocked = True; add_log(f"Error: {str(e)[:15]}")
 
