@@ -18,8 +18,8 @@ MY_USERNAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "System Off."
-bot_logs = ["Hard Stop logic active. Click RESUME to listen."]
+last_bot_reply = "Waiting for Resume..."
+bot_logs = ["System Online. Listening for Grow Success."]
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
@@ -81,7 +81,7 @@ def index():
             </div>
             <div class="stats-grid">
                 <div class="stat-box" style="grid-column: span 2; text-align: center; border-color: var(--acc);">
-                    <span class="label" style="color: var(--acc);">Lifetime Total Points</span>
+                    <span class="label" style="color: var(--acc);">Lifetime Points (Synced)</span>
                     <span id="pl" class="stat-val" style="font-size: 1.6rem;">0</span>
                 </div>
                 <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
@@ -143,7 +143,7 @@ def start_bot():
     global is_running, force_trigger
     is_running = True
     force_trigger = True
-    add_log("▶ RESUME: Commands & Listener Re-Activated.")
+    add_log("▶ RESUME: Points sync active.")
     return "OK"
 
 @app.route('/stop')
@@ -151,15 +151,14 @@ def stop_bot():
     global is_running, next_run_time
     is_running = False
     next_run_time = None
-    add_log("■ STOP: System is now Deaf & Mute.")
+    add_log("■ STOP: System paused.")
     return "OK"
 
 @app.route('/restart')
 def restart_bot(): 
     global is_blocked, force_trigger, is_running
     is_blocked = False; is_running = True; force_trigger = True
-    add_log("🔄 FORCE: Attempting immediate grow.")
-    return "OK"
+    add_log("🔄 FORCE: Command sent."); return "OK"
 
 @app.route('/clear_logs')
 def clear_logs(): 
@@ -170,32 +169,41 @@ async def main_logic():
     
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-    # --- THE VERIFICATION HANDLER ---
+    @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
         global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today
-        # Even if the handler is attached, this double-check ensures silence when stopped
         if not is_running: return 
 
         if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text
             if MY_USERNAME.lower() in msg.lower() and "BATTLE" not in msg.upper():
                 last_bot_reply = msg
+
+                # --- 1. SYNC LIFETIME POINTS FROM "Now: XXXX pts" ---
+                now_match = re.search(r'Now:\s*([\d,]+)', msg)
+                if now_match:
+                    raw_pts = now_match.group(1).replace(',', '')
+                    points_lifetime = int(raw_pts)
+                    add_log(f"🔄 Sync: Total Points is now {points_lifetime}")
+
+                # --- 2. TRACK GAIN FROM "Gained: +XX pts" ---
+                gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
+                if "GROW SUCCESS" in msg.upper() or gain_match:
+                    total_grows_today += 1
+                    if gain_match:
+                        val = int(gain_match.group(1))
+                        points_today += val
+                        add_log(f"✅ Verified: +{val} pts gained.")
+                
+                # --- 3. TRACK WAITS ---
                 if "please wait" in msg.lower():
                     waits_today += 1
-                    add_log("❌ Verification: WAIT (Not Counted)")
-                elif "GROW SUCCESS" in msg.upper() or "Gained:" in msg:
-                    total_grows_today += 1
-                    match = re.search(r'Gained:\s*([+-]\d+)', msg)
-                    if match:
-                        val = int(match.group(1))
-                        points_today += val
-                        points_lifetime += val
-                        add_log(f"✅ Verified: Grow #{total_grows_today} (+{val} pts)")
+                    add_log("❌ Wait: Command ignored by bot.")
 
     async with client:
-        add_log("Connected to Telegram.")
-        listener_active = False
-
+        add_log("Connection Established.")
+        target_group = await client.get_entity(GROUP_TARGET)
+        
         while True:
             ph_now = get_ph_time()
             if ph_now.day != current_day:
@@ -203,32 +211,19 @@ async def main_logic():
                 total_grows_today, waits_today, points_today = 0, 0, 0
                 current_day = ph_now.day
 
-            # --- DYNAMIC LISTENER CONTROL ---
-            if is_running and not listener_active:
-                client.add_event_handler(handler, events.NewMessage(chats=GROUP_TARGET))
-                listener_active = True
-                add_log("📡 Listener attached.")
-            elif not is_running and listener_active:
-                client.remove_event_handler(handler)
-                listener_active = False
-                add_log("🔇 Listener detached.")
-
             if is_running:
                 try:
-                    add_log("🚀 Sending command: /grow")
-                    async with client.action(GROUP_TARGET, 'typing'):
+                    async with client.action(target_group, 'typing'):
                         await asyncio.sleep(random.uniform(2, 4))
-                        await client.send_message(GROUP_TARGET, "/grow")
+                        await client.send_message(target_group, "/grow")
                         is_blocked = False
                 except Exception as e:
-                    is_blocked = True
-                    add_log(f"⚠️ Muted: {str(e)[:20]}")
+                    is_blocked = True; add_log(f"⚠️ Muted: {str(e)[:15]}")
 
                 next_run_time = get_ph_time() + timedelta(seconds=35)
                 for _ in range(35):
                     if force_trigger or not is_running:
-                        force_trigger = False
-                        break
+                        force_trigger = False; break
                     await asyncio.sleep(1)
             else:
                 await asyncio.sleep(1)
