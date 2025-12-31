@@ -19,7 +19,7 @@ BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
 last_bot_reply = "System Online."
-bot_logs = ["Always-on Listener: Active."]
+bot_logs = ["Listener Active. Reading all chat..."]
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
@@ -27,7 +27,7 @@ waits_yesterday = 0
 points_today = 0
 points_yesterday = 0
 points_lifetime = 0  
-is_blocked = False 
+is_muted = False 
 is_running = False  
 next_run_time = None
 force_trigger = False 
@@ -122,7 +122,8 @@ def index():
 def get_data():
     ph_now = get_ph_time()
     t_str = "--"
-    if not is_running: s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
+    if is_muted: s, c, t_str = "⚠️ MUTED (1m RETRY)", "#fbbf24", "MUTE"
+    elif not is_running: s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
     else:
         s, c = "🟢 ACTIVE", "#34d399"
         if next_run_time:
@@ -137,71 +138,66 @@ def get_data():
 
 @app.route('/start')
 def start_bot(): 
-    global is_running, force_trigger
-    is_running = True; force_trigger = True
-    add_log("▶ RESUME: Growth loop started.")
+    global is_running, force_trigger, is_muted
+    is_running = True; force_trigger = True; is_muted = False
+    add_log("▶ RESUME: Listening and Growing.")
     return "OK"
 
 @app.route('/stop')
 def stop_bot(): 
-    global is_running, next_run_time
-    is_running = False; next_run_time = None
-    add_log("■ STOP: Growth loop paused. Listener remains ON.")
+    global is_running, next_run_time, is_muted
+    is_running = False; next_run_time = None; is_muted = False
+    add_log("■ STOP: Idle but still reading chat.")
     return "OK"
 
 @app.route('/restart')
 def restart_bot(): 
-    global is_running, force_trigger
-    is_running = True; force_trigger = True
-    add_log("🔄 FORCE: Immediate grow triggered."); return "OK"
+    global is_running, force_trigger, is_muted
+    is_running = True; force_trigger = True; is_muted = False
+    add_log("🔄 FORCE: Command sent."); return "OK"
 
 @app.route('/clear_logs')
 def clear_logs(): 
     global bot_logs; bot_logs = ["Logs cleared."]; return "OK"
 
 async def main_logic():
-    global last_bot_reply, total_grows_today, total_grows_yesterday, points_today, points_yesterday, points_lifetime, waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day
+    global last_bot_reply, total_grows_today, total_grows_yesterday, points_today, points_yesterday, points_lifetime, waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day, is_muted
     
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-    # PERMANENT HANDLER: Always running, even if is_running is False
+    # PERMANENT LISTENER: Always reads even when loop is stopped
     @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
-        global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today
+        global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today, is_muted
         
-        # Always acknowledge read to clear that blue @ button
+        # Auto-read to clear the blue @ mention badge
         try: await client.send_read_acknowledge(event.chat_id, max_id=event.id)
         except: pass
 
         if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text
+            # Identify mentions (handles both @Name and Name)
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
-
-                # 1. Scraping Lifetime Total (Syncs even when paused!)
+                # Sync Total Points
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
                 if now_match:
                     points_lifetime = int(now_match.group(1).replace(',', ''))
-                    add_log(f"🔄 Sync: Total {points_lifetime}")
-
-                # 2. Today's Stats (Only logs if running)
+                # Track Grows
                 gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
-                    if gain_match:
-                        val = int(gain_match.group(1))
-                        points_today += val
-                        if is_running: add_log(f"✅ Success: +{val}")
-                
+                    if gain_match: points_today += int(gain_match.group(1))
+                # Track Waits
                 if "please wait" in msg.lower():
                     waits_today += 1
-                    if is_running: add_log("❌ Wait Detected.")
 
     async with client:
         add_log("Permanent Listener Connected.")
         target_group = await client.get_entity(GROUP_TARGET)
         
         while True:
+            # Date Reset Logic
             ph_now = get_ph_time()
             if ph_now.day != current_day:
                 total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
@@ -213,14 +209,26 @@ async def main_logic():
                     async with client.action(target_group, 'typing'):
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(target_group, "/grow")
-                except: pass
+                        # If message sent successfully, we are not muted
+                        if is_muted:
+                            is_muted = False
+                            add_log("🔓 Unmuted: Resuming 35s cycle.")
+                except errors.ChatWriteForbiddenError:
+                    is_muted = True
+                    add_log("🚫 Muted: Retrying in 60s...")
+                except Exception as e:
+                    add_log(f"⚠️ Error: {str(e)[:20]}")
 
-                next_run_time = get_ph_time() + timedelta(seconds=35)
-                for _ in range(35):
+                # Calculate next wait time based on mute status
+                wait_duration = 60 if is_muted else 35
+                next_run_time = get_ph_time() + timedelta(seconds=wait_duration)
+                
+                for _ in range(wait_duration):
                     if force_trigger or not is_running:
                         force_trigger = False; break
                     await asyncio.sleep(1)
             else:
+                # Idle state
                 await asyncio.sleep(1)
 
 def run_flask():
