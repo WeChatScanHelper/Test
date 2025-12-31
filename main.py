@@ -13,9 +13,12 @@ API_HASH = os.getenv("API_HASH", "27af3370413767173feb169bec5065f9")
 SESSION_STRING = os.getenv("SESSION_STRING") 
 TARGET_BOT = "@FkerKeyBot" 
 
+# --- GLOBAL TRACKING ---
+last_sent_time = None
+bot_log = []
+
 app = Flask(__name__)
 
-# Helper to get PH time easily
 def get_ph_time():
     return datetime.now(timezone(timedelta(hours=8)))
 
@@ -24,20 +27,39 @@ def home():
     ph_now = get_ph_time()
     ph_hour = ph_now.hour
     
-    # Logic to determine status for the web page
+    # 1. Determine Status
     if 7 <= ph_hour < 23:
-        status = "🟢 AWAKE (Farming Points)"
+        status = "<span style='color: green;'>🟢 AWAKE</span>"
     else:
-        status = "🔴 SLEEPING (Stealth Night Mode)"
-        
+        status = "<span style='color: red;'>🔴 SLEEPING (Stealth Mode)</span>"
+    
+    # 2. Calculate "Time Since Last Message"
+    time_info = "Waiting for first message..."
+    if last_sent_time:
+        diff = ph_now - last_sent_time
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            time_info = f"{seconds} seconds ago"
+        else:
+            time_info = f"{seconds // 60} minutes ago"
+
+    # 3. Create Log View
+    recent_logs = "".join([f"<li>{l}</li>" for l in bot_log[-5:]]) # Show last 5 logs
+
     return f"""
     <html>
-        <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-            <h1>Bot Status: {status}</h1>
-            <p>Current Philippines Time: <b>{ph_now.strftime('%I:%M %p')}</b></p>
-            <p>Farming Hours: 07:00 AM - 11:00 PM</p>
-            <hr width="300">
-            <p><small>Check Render Logs for detailed activity.</small></p>
+        <body style="font-family: sans-serif; text-align: center; padding: 20px; background-color: #f4f4f9;">
+            <div style="background: white; display: inline-block; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h1>Bot Dashboard</h1>
+                <h3>Status: {status}</h3>
+                <p><b>Current PH Time:</b> {ph_now.strftime('%I:%M:%p')}</p>
+                <p><b>Last /grow sent:</b> <span style="color: blue;">{time_info}</span></p>
+                <hr>
+                <div style="text-align: left; background: #eee; padding: 10px; border-radius: 5px;">
+                    <p style="margin-top: 0;"><b>Recent Activity:</b></p>
+                    <ul style="font-size: 0.9em; padding-left: 20px;">{recent_logs if recent_logs else "No activity yet..."}</ul>
+                </div>
+            </div>
         </body>
     </html>
     """
@@ -47,35 +69,32 @@ def run_flask():
     app.run(host='0.0.0.0', port=port)
 
 async def auto_grow():
+    global last_sent_time, bot_log
     async with TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH) as client:
-        print("Bot started and connected to Telegram.")
+        print("Bot started.")
         
         while True:
             ph_now = get_ph_time()
             ph_hour = ph_now.hour
 
-            # Check if it's "Active Hours" (7 AM to 11 PM Manila Time)
             if 7 <= ph_hour < 23:
                 try:
-                    # Simulate human typing
                     async with client.action(TARGET_BOT, 'typing'):
                         await asyncio.sleep(random.uniform(2, 5))
                         await client.send_message(TARGET_BOT, "/grow")
-                        print(f"[{ph_now.strftime('%I:%M %p')}] Sent /grow")
+                        
+                        # Update global variables for the website
+                        last_sent_time = ph_now
+                        bot_log.append(f"Sent /grow at {ph_now.strftime('%I:%M:%S %p')}")
+                        if len(bot_log) > 10: bot_log.pop(0) # Keep log short
+
                 except Exception as e:
-                    print(f"Error: {e}")
+                    bot_log.append(f"Error: {str(e)[:50]}")
                 
-                # Wait 45-90 seconds + random break chance
                 wait_time = random.randint(45, 90)
-                if random.random() < 0.05: # 5% chance of a longer break
-                    wait_time = random.randint(300, 600)
-                    print("Taking a 5-10 minute break...")
-                    
                 await asyncio.sleep(wait_time)
             else:
-                # Night Mode
-                print(f"[{ph_now.strftime('%I:%M %p')}] PH Night Mode: Sleeping...")
-                await asyncio.sleep(900) # Check every 15 mins during night
+                await asyncio.sleep(600) # Check every 10 mins during night
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
