@@ -18,8 +18,8 @@ MY_USERNAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "System Ready."
-bot_logs = ["Dashboard Restored. All counters active."]
+last_bot_reply = "System Idle."
+bot_logs = ["System Initialized. Click RESUME to begin."]
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
@@ -44,7 +44,7 @@ def add_log(text):
     bot_logs.insert(0, f"[{timestamp}] {text}")
     if len(bot_logs) > 50: bot_logs.pop()
 
-# --- WEB UI ---
+# --- WEB UI (AJAX) ---
 @app.route('/')
 def index():
     return """
@@ -64,8 +64,9 @@ def index():
             .stat-val { font-size: 1.2rem; font-weight: 800; display: block; }
             .label { font-size: 0.55rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; }
             .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
-            .btn { padding: 12px; border-radius: 10px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.75rem; }
-            .log-box { background: #000; height: 140px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
+            .btn { padding: 12px; border-radius: 10px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.75rem; transition: 0.2s; }
+            .btn:active { transform: scale(0.95); }
+            .log-box { background: #000; height: 160px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
             .reply { background: #0f172a; padding: 10px; border-radius: 10px; font-size: 0.8rem; border-left: 4px solid var(--acc); margin: 12px 0; white-space: pre-wrap; }
         </style>
     </head>
@@ -88,10 +89,8 @@ def index():
                 </div>
                 <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
                 <div class="stat-box"><span class="label">Pts Yesterday</span><span id="py" class="stat-val">+0</span></div>
-                
                 <div class="stat-box"><span class="label">Grow Today</span><span id="gt" class="stat-val">0</span></div>
                 <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val">0</span></div>
-                
                 <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
                 <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val">0</span></div>
             </div>
@@ -131,7 +130,7 @@ def get_data():
     ph_now = get_ph_time()
     t_str = "--"
     if not is_running: s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
-    elif is_blocked: s, c, t_str = "MUTED", "#fbbf24", "WAIT"
+    elif is_blocked: s, c, t_str = "⚠️ MUTED", "#fbbf24", "MUTE"
     else:
         s, c = "🟢 ACTIVE", "#34d399"
         if next_run_time:
@@ -144,15 +143,36 @@ def get_data():
         "reply": last_bot_reply, "status": s, "color": c, "logs": bot_logs
     })
 
-# Routes for Start, Stop, Restart, Clear Logs (omitted for brevity, same as previous)
 @app.route('/start')
-def start_bot(): global is_running; is_running = True; add_log("System Online."); return "OK"
+def start_bot(): 
+    global is_running, is_blocked
+    is_running = True
+    is_blocked = False
+    add_log("▶ RESUMING: Monitoring and command loop active.")
+    return "OK"
+
 @app.route('/stop')
-def stop_bot(): global is_running, next_run_time; is_running = False; next_run_time = None; add_log("System Offline."); return "OK"
+def stop_bot(): 
+    global is_running, next_run_time
+    is_running = False
+    next_run_time = None
+    add_log("■ STOPPED: Everything paused.")
+    return "OK"
+
 @app.route('/restart')
-def restart_bot(): global is_blocked, force_trigger, is_running; is_blocked = False; is_running = True; force_trigger = True; add_log("Forced Grow sent."); return "OK"
+def restart_bot(): 
+    global is_blocked, force_trigger, is_running
+    is_blocked = False
+    is_running = True
+    force_trigger = True
+    add_log("🔄 FORCE: Attempting immediate grow.")
+    return "OK"
+
 @app.route('/clear_logs')
-def clear_logs(): global bot_logs; bot_logs = ["Logs cleared."]; return "OK"
+def clear_logs(): 
+    global bot_logs
+    bot_logs = ["Logs cleared."]
+    return "OK"
 
 async def main_logic():
     global last_bot_reply, total_grows_today, total_grows_yesterday, waits_today, waits_yesterday, points_today, points_yesterday, points_lifetime, is_blocked, is_running, current_day, force_trigger, next_run_time
@@ -169,6 +189,7 @@ async def main_logic():
                 last_bot_reply = msg
                 if "please wait" in msg.lower():
                     waits_today += 1
+                    add_log("❌ Verification: WAIT response (Count ignored)")
                 elif "GROW SUCCESS" in msg.upper() or "Gained:" in msg:
                     total_grows_today += 1
                     match = re.search(r'Gained:\s*([+-]\d+)', msg)
@@ -176,6 +197,7 @@ async def main_logic():
                         val = int(match.group(1))
                         points_today += val
                         points_lifetime += val
+                        add_log(f"✅ Verified Grow #{total_grows_today} (+{val} pts)")
 
     async with client:
         while True:
@@ -184,15 +206,18 @@ async def main_logic():
                 total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
                 total_grows_today, waits_today, points_today = 0, 0, 0
                 current_day = ph_now.day
-                add_log("Stats moved to yesterday.")
+                add_log("⏰ Day changed: Stats rotated.")
 
             if is_running:
                 try:
+                    add_log("🚀 Sending command: /grow")
                     async with client.action(GROUP_TARGET, 'typing'):
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(GROUP_TARGET, "/grow")
                         is_blocked = False
-                except Exception: is_blocked = True
+                except Exception as e: 
+                    is_blocked = True
+                    add_log(f"⚠️ Muted: {str(e)[:20]}")
 
                 next_run_time = get_ph_time() + timedelta(seconds=35)
                 for _ in range(35):
