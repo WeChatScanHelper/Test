@@ -1,9 +1,8 @@
-
 import os
 import asyncio
 import random
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from flask import Flask
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -14,66 +13,70 @@ API_HASH = os.getenv("API_HASH", "27af3370413767173feb169bec5065f9")
 SESSION_STRING = os.getenv("SESSION_STRING") 
 TARGET_BOT = "@FkerKeyBot" 
 
-# --- PHILIPPINES STEALTH SETTINGS (UTC+8) ---
-# 11:00 PM PHT is 15:00 UTC
-# 06:00 AM PHT is 22:00 UTC
-SLEEP_START_UTC = 15 
-SLEEP_END_UTC = 22
-
 app = Flask(__name__)
+
+# Helper to get PH time easily
+def get_ph_time():
+    return datetime.now(timezone(timedelta(hours=8)))
 
 @app.route('/')
 def home():
-    return "Bot is running in Stealth Mode (PH Timezone Optimized)."
+    ph_now = get_ph_time()
+    ph_hour = ph_now.hour
+    
+    # Logic to determine status for the web page
+    if 7 <= ph_hour < 23:
+        status = "🟢 AWAKE (Farming Points)"
+    else:
+        status = "🔴 SLEEPING (Stealth Night Mode)"
+        
+    return f"""
+    <html>
+        <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+            <h1>Bot Status: {status}</h1>
+            <p>Current Philippines Time: <b>{ph_now.strftime('%I:%M %p')}</b></p>
+            <p>Farming Hours: 07:00 AM - 11:00 PM</p>
+            <hr width="300">
+            <p><small>Check Render Logs for detailed activity.</small></p>
+        </body>
+    </html>
+    """
 
 def run_flask():
-    # Use Render's dynamic port
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
 async def auto_grow():
     async with TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH) as client:
-        print("Successfully connected. Human simulation active.")
+        print("Bot started and connected to Telegram.")
         
         while True:
-            # Get current hour in UTC
-            now_utc = datetime.utcnow().hour
-            
-            # 1. NIGHT MODE: The bot 'sleeps' when you sleep in PH
-            if SLEEP_START_UTC <= now_utc or now_utc < (SLEEP_END_UTC - 24 if SLEEP_END_UTC > 24 else SLEEP_END_UTC):
-                print(f"[{datetime.now().strftime('%I:%M %p')}] PH Night Mode: Sleeping for 30 mins...")
-                await asyncio.sleep(1800) 
-                continue
+            ph_now = get_ph_time()
+            ph_hour = ph_now.hour
 
-            try:
-                # 2. SIMULATE TYING: Shows "User is typing..." in the chat
-                async with client.action(TARGET_BOT, 'typing'):
-                    # Wait 2-5 seconds while "typing" to look natural
-                    await asyncio.sleep(random.uniform(2.5, 5.2))
+            # Check if it's "Active Hours" (7 AM to 11 PM Manila Time)
+            if 7 <= ph_hour < 23:
+                try:
+                    # Simulate human typing
+                    async with client.action(TARGET_BOT, 'typing'):
+                        await asyncio.sleep(random.uniform(2, 5))
+                        await client.send_message(TARGET_BOT, "/grow")
+                        print(f"[{ph_now.strftime('%I:%M %p')}] Sent /grow")
+                except Exception as e:
+                    print(f"Error: {e}")
+                
+                # Wait 45-90 seconds + random break chance
+                wait_time = random.randint(45, 90)
+                if random.random() < 0.05: # 5% chance of a longer break
+                    wait_time = random.randint(300, 600)
+                    print("Taking a 5-10 minute break...")
                     
-                    await client.send_message(TARGET_BOT, "/grow")
-                    print(f"[{datetime.now().strftime('%I:%M %p')}] Command sent: /grow")
-
-            except Exception as e:
-                print(f"Error encountered: {e}")
-                # Wait 5 minutes if there's a connection issue
-                await asyncio.sleep(300)
-
-            # 3. RANDOMIZED INTERVALS (The "Jitter")
-            # Instead of exactly 30s, we wait 45 to 90 seconds randomly
-            wait_time = random.randint(45, 90)
-            
-            # 4. RANDOM BREAKS: 10% chance to take a 5-10 minute break
-            if random.random() < 0.10:
-                wait_time = random.randint(300, 600)
-                print("Taking a quick coffee break (Simulated Human behavior)...")
-
-            print(f"Waiting {wait_time}s for next action.")
-            await asyncio.sleep(wait_time)
+                await asyncio.sleep(wait_time)
+            else:
+                # Night Mode
+                print(f"[{ph_now.strftime('%I:%M %p')}] PH Night Mode: Sleeping...")
+                await asyncio.sleep(900) # Check every 15 mins during night
 
 if __name__ == "__main__":
-    # Start web server so Render doesn't shut us down
     threading.Thread(target=run_flask, daemon=True).start()
-    
-    # Start the bot loop
     asyncio.run(auto_grow())
