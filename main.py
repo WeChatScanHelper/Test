@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 import random
@@ -14,12 +15,12 @@ API_HASH = os.getenv("API_HASH", "27af3370413767173feb169bec5065f9")
 SESSION_STRING = os.getenv("SESSION_STRING") 
 
 GROUP_TARGET = -1003598172312 
-MY_USERNAME = "AryaCollymore"   
+MY_NAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "Waiting for Resume..."
-bot_logs = ["System Online. Listening for Grow Success."]
+last_bot_reply = "System Idle."
+bot_logs = ["Click RESUME to start monitoring."]
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
@@ -40,8 +41,9 @@ def get_ph_time():
 
 def add_log(text):
     global bot_logs
+    clean_text = text.replace("@", "")
     timestamp = get_ph_time().strftime('%H:%M:%S')
-    bot_logs.insert(0, f"[{timestamp}] {text}")
+    bot_logs.insert(0, f"[{timestamp}] {clean_text}")
     if len(bot_logs) > 50: bot_logs.pop()
 
 # --- WEB UI ---
@@ -81,7 +83,7 @@ def index():
             </div>
             <div class="stats-grid">
                 <div class="stat-box" style="grid-column: span 2; text-align: center; border-color: var(--acc);">
-                    <span class="label" style="color: var(--acc);">Lifetime Points (Synced)</span>
+                    <span class="label" style="color: var(--acc);">Lifetime Total Points</span>
                     <span id="pl" class="stat-val" style="font-size: 1.6rem;">0</span>
                 </div>
                 <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
@@ -135,7 +137,7 @@ def get_data():
         "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
         "pt": points_today, "py": points_yesterday, "pl": points_lifetime, 
         "wt": waits_today, "wy": waits_yesterday,
-        "reply": last_bot_reply, "status": s, "color": c, "logs": bot_logs
+        "reply": last_bot_reply.replace("@", ""), "status": s, "color": c, "logs": bot_logs
     })
 
 @app.route('/start')
@@ -143,7 +145,7 @@ def start_bot():
     global is_running, force_trigger
     is_running = True
     force_trigger = True
-    add_log("▶ RESUME: Points sync active.")
+    add_log("▶ RESUME: Listening and Reading restarted.")
     return "OK"
 
 @app.route('/stop')
@@ -151,14 +153,14 @@ def stop_bot():
     global is_running, next_run_time
     is_running = False
     next_run_time = None
-    add_log("■ STOP: System paused.")
+    add_log("■ STOP: Completely disconnected from chat.")
     return "OK"
 
 @app.route('/restart')
 def restart_bot(): 
     global is_blocked, force_trigger, is_running
     is_blocked = False; is_running = True; force_trigger = True
-    add_log("🔄 FORCE: Command sent."); return "OK"
+    add_log("🔄 FORCE: Command loop reset."); return "OK"
 
 @app.route('/clear_logs')
 def clear_logs(): 
@@ -169,42 +171,47 @@ async def main_logic():
     
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-    @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
         global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today
         if not is_running: return 
 
         if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text
-            if MY_USERNAME.lower() in msg.lower() and "BATTLE" not in msg.upper():
+            # Identify mentions by stripping @
+            if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
+                # Mark as read to clear the blue @ badge instantly
+                await client.send_read_acknowledge(event.chat_id, max_id=event.id)
 
-                # --- 1. SYNC LIFETIME POINTS FROM "Now: XXXX pts" ---
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
                 if now_match:
-                    raw_pts = now_match.group(1).replace(',', '')
-                    points_lifetime = int(raw_pts)
-                    add_log(f"🔄 Sync: Total Points is now {points_lifetime}")
+                    points_lifetime = int(now_match.group(1).replace(',', ''))
+                    add_log(f"🔄 Sync: Total is {points_lifetime}")
 
-                # --- 2. TRACK GAIN FROM "Gained: +XX pts" ---
                 gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
                     if gain_match:
                         val = int(gain_match.group(1))
                         points_today += val
-                        add_log(f"✅ Verified: +{val} pts gained.")
-                
-                # --- 3. TRACK WAITS ---
-                if "please wait" in msg.lower():
-                    waits_today += 1
-                    add_log("❌ Wait: Command ignored by bot.")
+                        add_log(f"✅ Success: +{val} points.")
 
     async with client:
-        add_log("Connection Established.")
+        add_log("System Online.")
         target_group = await client.get_entity(GROUP_TARGET)
+        handler_active = False
         
         while True:
+            # DYNAMIC LISTENER: Physically adds/removes to prevent notification build-up
+            if is_running and not handler_active:
+                client.add_event_handler(handler, events.NewMessage(chats=GROUP_TARGET))
+                handler_active = True
+                add_log("📡 Listener attached.")
+            elif not is_running and handler_active:
+                client.remove_event_handler(handler)
+                handler_active = False
+                add_log("🔇 Listener detached.")
+
             ph_now = get_ph_time()
             if ph_now.day != current_day:
                 total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
