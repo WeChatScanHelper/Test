@@ -1,4 +1,3 @@
-
 import os
 import asyncio
 import random
@@ -19,16 +18,12 @@ MY_NAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
 # --- PERSISTENT TRACKING ---
-last_bot_reply = "System Idle."
-bot_logs = ["Click RESUME to start monitoring."]
+last_bot_reply = "Offline."
+bot_logs = ["Stopped. Listener is DISCONNECTED."]
 total_grows_today = 0
 total_grows_yesterday = 0
-waits_today = 0
-waits_yesterday = 0
 points_today = 0
-points_yesterday = 0
 points_lifetime = 0  
-is_blocked = False 
 is_running = False  
 next_run_time = None
 force_trigger = False 
@@ -53,7 +48,7 @@ def index():
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <title>PH Turbo Admin</title>
+        <title>PH Hard Cutoff</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             :root { --bg: #0f172a; --card: #1e293b; --acc: #38bdf8; --text: #f8fafc; }
@@ -87,11 +82,7 @@ def index():
                     <span id="pl" class="stat-val" style="font-size: 1.6rem;">0</span>
                 </div>
                 <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
-                <div class="stat-box"><span class="label">Pts Yesterday</span><span id="py" class="stat-val">+0</span></div>
                 <div class="stat-box"><span class="label">Grow Today</span><span id="gt" class="stat-val">0</span></div>
-                <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val">0</span></div>
-                <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
-                <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val">0</span></div>
             </div>
             <div class="label">Latest Bot Response</div>
             <div class="reply" id="reply">...</div>
@@ -104,11 +95,7 @@ def index():
                     const d = await res.json();
                     document.getElementById('timer').innerText = d.timer;
                     document.getElementById('gt').innerText = d.gt;
-                    document.getElementById('gy').innerText = d.gy;
-                    document.getElementById('wt').innerText = d.wt;
-                    document.getElementById('wy').innerText = d.wy;
                     document.getElementById('pt').innerText = '+' + d.pt;
-                    document.getElementById('py').innerText = '+' + d.py;
                     document.getElementById('pl').innerText = d.pl.toLocaleString();
                     document.getElementById('reply').innerText = d.reply;
                     document.getElementById('status').innerText = d.status;
@@ -127,16 +114,13 @@ def get_data():
     ph_now = get_ph_time()
     t_str = "--"
     if not is_running: s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
-    elif is_blocked: s, c, t_str = "⚠️ MUTED", "#fbbf24", "MUTE"
     else:
         s, c = "🟢 ACTIVE", "#34d399"
         if next_run_time:
             diff = int((next_run_time - ph_now).total_seconds())
             t_str = f"{max(0, diff)}s"
     return jsonify({
-        "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
-        "pt": points_today, "py": points_yesterday, "pl": points_lifetime, 
-        "wt": waits_today, "wy": waits_yesterday,
+        "timer": t_str, "gt": total_grows_today, "pt": points_today, "pl": points_lifetime, 
         "reply": last_bot_reply.replace("@", ""), "status": s, "color": c, "logs": bot_logs
     })
 
@@ -145,7 +129,7 @@ def start_bot():
     global is_running, force_trigger
     is_running = True
     force_trigger = True
-    add_log("▶ RESUME: Listening and Reading restarted.")
+    add_log("▶ RESUME: Attaching listener...")
     return "OK"
 
 @app.route('/stop')
@@ -153,79 +137,70 @@ def stop_bot():
     global is_running, next_run_time
     is_running = False
     next_run_time = None
-    add_log("■ STOP: Completely disconnected from chat.")
+    add_log("■ STOP: Detaching listener...")
     return "OK"
 
 @app.route('/restart')
 def restart_bot(): 
-    global is_blocked, force_trigger, is_running
-    is_blocked = False; is_running = True; force_trigger = True
-    add_log("🔄 FORCE: Command loop reset."); return "OK"
+    global is_running, force_trigger
+    is_running = True; force_trigger = True
+    add_log("🔄 FORCE: Command sent."); return "OK"
 
 @app.route('/clear_logs')
 def clear_logs(): 
     global bot_logs; bot_logs = ["Logs cleared."]; return "OK"
 
 async def main_logic():
-    global last_bot_reply, total_grows_today, total_grows_yesterday, waits_today, waits_yesterday, points_today, points_yesterday, points_lifetime, is_blocked, is_running, current_day, force_trigger, next_run_time
+    global last_bot_reply, total_grows_today, points_today, points_lifetime, is_running, force_trigger, next_run_time
     
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
+    # The Logic inside the Listener
     async def handler(event):
-        global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today
+        global last_bot_reply, points_today, points_lifetime, total_grows_today
         if not is_running: return 
 
         if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text
-            # Identify mentions by stripping @
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
-                # Mark as read to clear the blue @ badge instantly
+                # Mark as read immediately
                 await client.send_read_acknowledge(event.chat_id, max_id=event.id)
 
+                # Sync Lifetime
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
                 if now_match:
                     points_lifetime = int(now_match.group(1).replace(',', ''))
-                    add_log(f"🔄 Sync: Total is {points_lifetime}")
-
+                
+                # Track Gain
                 gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
                     if gain_match:
-                        val = int(gain_match.group(1))
-                        points_today += val
-                        add_log(f"✅ Success: +{val} points.")
+                        points_today += int(gain_match.group(1))
+                        add_log(f"✅ Success logged.")
 
     async with client:
-        add_log("System Online.")
+        add_log("Client Connected.")
         target_group = await client.get_entity(GROUP_TARGET)
         handler_active = False
         
         while True:
-            # DYNAMIC LISTENER: Physically adds/removes to prevent notification build-up
+            # HARD CUTOFF LOGIC: Physically Add/Remove the handler
             if is_running and not handler_active:
                 client.add_event_handler(handler, events.NewMessage(chats=GROUP_TARGET))
                 handler_active = True
-                add_log("📡 Listener attached.")
+                add_log("📡 Listener: ON (Reading Chat)")
             elif not is_running and handler_active:
                 client.remove_event_handler(handler)
                 handler_active = False
-                add_log("🔇 Listener detached.")
-
-            ph_now = get_ph_time()
-            if ph_now.day != current_day:
-                total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
-                total_grows_today, waits_today, points_today = 0, 0, 0
-                current_day = ph_now.day
+                add_log("🔇 Listener: OFF (Ignoring Chat)")
 
             if is_running:
                 try:
-                    async with client.action(target_group, 'typing'):
-                        await asyncio.sleep(random.uniform(2, 4))
-                        await client.send_message(target_group, "/grow")
-                        is_blocked = False
-                except Exception as e:
-                    is_blocked = True; add_log(f"⚠️ Muted: {str(e)[:15]}")
+                    await client.send_message(target_group, "/grow")
+                    is_blocked = False
+                except: pass
 
                 next_run_time = get_ph_time() + timedelta(seconds=35)
                 for _ in range(35):
