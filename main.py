@@ -37,14 +37,11 @@ current_day = datetime.now(timezone(timedelta(hours=8))).day
 
 # ================= DEBUG/STATE MACHINE =================
 STATE = "IDLE"
-
 grow_sent_at = None
 retry_used = False
 MAX_REPLY_WAIT = 25
-
 cooldown_history = []
 learned_cooldown = 3605
-
 no_reply_streak = 0
 shadow_ban_flag = False
 awaiting_bot_reply = False
@@ -56,8 +53,7 @@ def get_ph_time():
 def add_log(text):
     ts = get_ph_time().strftime("%H:%M:%S")
     bot_logs.insert(0, f"[{ts}] {text.replace('@','')}")
-    if len(bot_logs) > 100:
-        bot_logs.pop()
+    if len(bot_logs) > 100: bot_logs.pop()
 
 # ================= WEB UI =================
 app = Flask(__name__)
@@ -110,11 +106,8 @@ def index():
             </div>
             <div class="label">Latest Bot Response</div>
             <div class="reply" id="reply">...</div>
-            
-            <!-- DEBUG OVERLAY ADDED -->
             <div class="label">Debug Info</div>
             <div class="debug" id="debug">...</div>
-            
             <div class="log-box" id="logs"></div>
         </div>
         <script>
@@ -132,9 +125,7 @@ def index():
                     document.getElementById('status').innerText = d.status;
                     document.getElementById('status').style.color = d.color;
                     document.getElementById('logs').innerHTML = d.logs.map(l => `<div>${l}</div>`).join('');
-
-                    // Update debug info
-                    document.getElementById('debug').innerText =
+                    document.getElementById('debug').innerText = 
                         "State: " + d.debug.state + "\\n" +
                         "Retry Used: " + d.debug.retry_used + "\\n" +
                         "Shadow-ban Warning: " + d.debug.shadow_ban_warning + "\\n" +
@@ -153,74 +144,66 @@ def get_data():
     ph_now = get_ph_time()
     t_str = "--"
     s, c = "🟢 ACTIVE", "#34d399"
-
-    if is_muted:
-        s, c, t_str = "⚠️ MUTED (1m RETRY)", "#fbbf24", "MUTE"
-    elif not is_running:
-        s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
+    if is_muted: s, c, t_str = "⚠️ MUTED (1m RETRY)", "#fbbf24", "MUTE"
+    elif not is_running: s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
     elif next_run_time:
         diff = int((next_run_time - ph_now).total_seconds())
         if diff > 0:
             m, s_rem = divmod(diff, 60)
             t_str = f"{m}m {s_rem}s"
-        else:
-            t_str = "READY"
-
+        else: t_str = "READY"
     return jsonify({
-        "timer": t_str,
-        "gt": total_grows_today,
-        "gy": total_grows_yesterday,
-        "pt": coins_today,
-        "py": coins_yesterday,
-        "pl": coins_lifetime,
-        "wt": waits_today,
-        "wy": waits_yesterday,
-        "reply": last_bot_reply.replace("@", ""),
-        "status": s,
-        "color": c,
-        "logs": bot_logs,
-        "debug": {
-            "state": STATE,
-            "retry_used": retry_used,
-            "shadow_ban_warning": shadow_ban_flag,
-            "learned_cd": learned_cooldown,
-            "no_reply_streak": no_reply_streak
-        }
+        "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
+        "pt": coins_today, "py": coins_yesterday, "pl": coins_lifetime,
+        "wt": waits_today, "wy": waits_yesterday,
+        "reply": last_bot_reply.replace("@", ""), "status": s, "color": c, "logs": bot_logs,
+        "debug": {"state": STATE, "retry_used": retry_used, "shadow_ban_warning": shadow_ban_flag, "learned_cd": learned_cooldown, "no_reply_streak": no_reply_streak}
     })
 
-# ================= RUN FLASK =================
+@app.route('/start')
+def start_bot(): 
+    global is_running, force_trigger; is_running = True; force_trigger = True
+    add_log("▶ RESUME"); return "OK"
+
+@app.route('/stop')
+def stop_bot(): 
+    global is_running; is_running = False
+    add_log("■ STOP"); return "OK"
+
+@app.route('/restart')
+def restart_bot(): 
+    global is_running, force_trigger; is_running = True; force_trigger = True
+    add_log("🔄 FORCE"); return "OK"
+
+@app.route('/clear_logs')
+def clear_logs(): 
+    global bot_logs; bot_logs = ["Logs cleared."]; return "OK"
+
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-# ================= TELEGRAM LOGIC =================
 async def main_logic():
     global last_bot_reply, total_grows_today, total_grows_yesterday, coins_today, coins_yesterday, coins_lifetime
     global waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day
-    global retry_used, grow_sent_at, STATE, awaiting_bot_reply
-    global no_reply_streak, shadow_ban_flag, learned_cooldown, is_muted
+    global retry_used, grow_sent_at, STATE, awaiting_bot_reply, no_reply_streak, shadow_ban_flag, learned_cooldown, is_muted
 
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
     @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
         global last_bot_reply, coins_today, coins_lifetime, total_grows_today, waits_today
-        global next_run_time, awaiting_bot_reply, retry_used, grow_sent_at
-        global STATE, no_reply_streak, shadow_ban_flag, learned_cooldown
+        global next_run_time, awaiting_bot_reply, retry_used, grow_sent_at, STATE, no_reply_streak, shadow_ban_flag, learned_cooldown
 
-        # --- 1. READ EVERYTHING ---
-        # This part clears the blue @ notification for ALL messages in the group
-        try:
-            await client.send_read_acknowledge(event.chat_id, max_id=event.id)
-        except:
-            pass
+        # 1. READ ALL CHATS (Clears blue @ button for EVERY message)
+        try: await client.send_read_acknowledge(event.chat_id, max_id=event.id)
+        except: pass
 
-        # --- 2. BOT SPECIFIC LOGIC ---
-        # We only run the point-tracking if the sender is the Bot
+        # 2. FILTER ONLY FOR BOT LOGIC
         sender = await event.get_sender()
-        if sender and sender.username and sender.username.lower() == BOT_USERNAME.strip('@').lower():
+        bot_target = BOT_USERNAME.replace("@", "").lower()
+        
+        if sender and sender.username and sender.username.lower() == bot_target:
             msg = event.text or ""
-            
-            # Check if YOU are mentioned in the bot's message
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
                 awaiting_bot_reply = False
@@ -229,7 +212,6 @@ async def main_logic():
                 STATE = "COOLDOWN"
                 no_reply_streak = 0
 
-                # Check wait timer
                 if "please wait" in msg.lower():
                     waits_today += 1
                     wait_m = re.search(r'(\d+)m', msg)
@@ -237,37 +219,28 @@ async def main_logic():
                     total_wait = 0
                     if wait_m: total_wait += int(wait_m.group(1))*60
                     if wait_s: total_wait += int(wait_s.group(1))
-
+                    
                     cooldown_history.append(total_wait)
                     if len(cooldown_history) > 5: cooldown_history.pop(0)
-
-                    # Cooldown trap detection
                     if cooldown_history.count(total_wait) >= 3 and total_wait <= 120:
                         extra = random.randint(180,420)
                         total_wait += extra
-                        add_log(f"⚠️ Cooldown trap → +{extra}s")
-
+                        add_log(f"⚠️ Trap → +{extra}s")
+                    
                     learned_cooldown = int(learned_cooldown*0.7 + total_wait*0.3)
                     next_run_time = get_ph_time() + timedelta(seconds=total_wait + 5)
                     return
 
-                # Coins & Success parsing
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
-                if now_match: 
-                    coins_lifetime = int(now_match.group(1).replace(',', ''))
-                
+                if now_match: coins_lifetime = int(now_match.group(1).replace(',', ''))
                 gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
-                    if gain_match: 
-                        coins_today += int(gain_match.group(1))
+                    if gain_match: coins_today += int(gain_match.group(1))
 
     async with client:
         add_log("Permanent Listener Connected. Reading all chat.")
         target_group = await client.get_entity(GROUP_TARGET)
-        
-        # ... (Rest of your while True loop remains exactly the same)
-
         while True:
             ph_now = get_ph_time()
             if ph_now.day != current_day:
@@ -276,57 +249,42 @@ async def main_logic():
                 current_day = ph_now.day
 
             if is_running:
-                # Wait until timer is ready
                 if next_run_time and ph_now < next_run_time and not force_trigger:
-                    STATE = "WAIT_TIMER"
-                    await asyncio.sleep(1)
-                    continue
+                    STATE = "WAIT_TIMER"; await asyncio.sleep(1); continue
 
-                # Retry detection
                 if awaiting_bot_reply and grow_sent_at:
                     elapsed = (ph_now - grow_sent_at).total_seconds()
                     if elapsed > MAX_REPLY_WAIT and not retry_used:
-                        retry_used = True
-                        awaiting_bot_reply = False
-                        force_trigger = True
-                        no_reply_streak += 1
-                        add_log("🔁 No reply → retrying once")
+                        retry_used = True; awaiting_bot_reply = False; force_trigger = True; no_reply_streak += 1
+                        add_log("🔁 No reply → retry")
                     elif elapsed > MAX_REPLY_WAIT*2:
-                        no_reply_streak += 1
-                        awaiting_bot_reply = False
+                        no_reply_streak += 1; awaiting_bot_reply = False
 
-                # Shadow-ban warning only
                 if no_reply_streak >= 3:
                     shadow_ban_flag = True
                     extra_delay = random.randint(300,900)
                     next_run_time = get_ph_time() + timedelta(seconds=extra_delay)
-                    add_log(f"🛡️ Shadow-ban suspected → warning only (+{extra_delay}s delay)")
-                    no_reply_streak = 0
+                    add_log(f"🛡️ Warning (+{extra_delay}s)"); no_reply_streak = 0
 
-                # Send /grow
                 try:
                     STATE = "SENDING"
                     async with client.action(target_group, 'typing'):
                         await asyncio.sleep(random.uniform(2,4))
                         await client.send_message(target_group, "/grow")
                         add_log("📤 Sent /grow")
-                        awaiting_bot_reply = True
-                        grow_sent_at = get_ph_time()
-                        force_trigger = False
+                        awaiting_bot_reply = True; grow_sent_at = get_ph_time(); force_trigger = False
                         next_run_time = get_ph_time() + timedelta(seconds=learned_cooldown)
                         STATE = "WAIT_REPLY"
                         if is_muted: is_muted = False
                 except errors.ChatWriteForbiddenError:
-                    is_muted = True
-                    next_run_time = get_ph_time() + timedelta(seconds=60)
-                    add_log("🚫 Muted → retry in 60s")
+                    is_muted = True; next_run_time = get_ph_time() + timedelta(seconds=60)
+                    add_log("🚫 Muted → 60s")
                 except Exception as e:
                     next_run_time = get_ph_time() + timedelta(seconds=30)
-                    add_log(f"⚠️ Error: {str(e)[:40]}")
+                    add_log(f"⚠️ Error: {str(e)[:20]}")
             else:
                 await asyncio.sleep(1)
 
-# ================= RUN =================
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
     asyncio.run(main_logic())
