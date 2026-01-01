@@ -46,7 +46,6 @@ def add_log(text):
     if len(bot_logs) > 100: bot_logs.pop()
 
 # --- WEB UI ---
-# --- UPDATED WEB UI WITH YESTERDAY STATS ---
 @app.route('/')
 def index():
     return """
@@ -181,7 +180,6 @@ async def main_logic():
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
                 
-                # --- SMART WAIT DETECTION ---
                 if "please wait" in msg.lower():
                     waits_today += 1
                     wait_m = re.search(r'(\d+)m', msg)
@@ -192,12 +190,10 @@ async def main_logic():
                     if wait_s: total_wait_secs += int(wait_s.group(1))
                     
                     if total_wait_secs > 0:
-                        # Sync internal timer to exactly what the bot wants (+5s safety)
                         next_run_time = get_ph_time() + timedelta(seconds=total_wait_secs + 5)
                         add_log(f"🕒 Bot busy. Syncing timer to: {total_wait_secs + 5}s")
-                        force_trigger = True # Break current sleep to adopt new time
+                        force_trigger = True 
 
-                # --- COIN & GROWTH TRACKING ---
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
                 if now_match:
                     coins_lifetime = int(now_match.group(1).replace(',', ''))
@@ -219,29 +215,29 @@ async def main_logic():
                 current_day = ph_now.day
 
             if is_running:
+                # 1. Wait until the timer hits 0
+                if next_run_time and get_ph_time() < next_run_time and not force_trigger:
+                    await asyncio.sleep(1)
+                    continue
+
+                # 2. Timer hit 0 or force triggered - SEND MESSAGE
                 try:
                     async with client.action(target_group, 'typing'):
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(target_group, "/grow")
                         add_log("📤 Sent /grow")
                         if is_muted: is_muted = False
+                        force_trigger = False
+                        
+                        # Set default next run to 1 hour (3605s) after sending
+                        next_run_time = get_ph_time() + timedelta(seconds=3605)
                 except errors.ChatWriteForbiddenError:
                     is_muted = True
                     add_log("🚫 Muted: Retrying in 60s...")
+                    next_run_time = get_ph_time() + timedelta(seconds=60)
                 except Exception as e:
                     add_log(f"⚠️ Error: {str(e)[:20]}")
-
-                # Default wait is 1 hour (3600s) unless the handler updates next_run_time
-                wait_duration = 60 if is_muted else 3600
-                if not next_run_time or get_ph_time() >= next_run_time:
-                    next_run_time = get_ph_time() + timedelta(seconds=wait_duration)
-                
-                # Sleep loop
-                while get_ph_time() < next_run_time and is_running:
-                    if force_trigger:
-                        force_trigger = False
-                        break
-                    await asyncio.sleep(1)
+                    next_run_time = get_ph_time() + timedelta(seconds=30)
             else:
                 await asyncio.sleep(1)
 
