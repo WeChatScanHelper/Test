@@ -46,6 +46,7 @@ def add_log(text):
     if len(bot_logs) > 100: bot_logs.pop()
 
 # --- WEB UI ---
+# --- UPDATED WEB UI WITH YESTERDAY STATS ---
 @app.route('/')
 def index():
     return """
@@ -66,7 +67,7 @@ def index():
             .label { font-size: 0.55rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; }
             .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
             .btn { padding: 12px; border-radius: 10px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.75rem; transition: 0.2s; }
-            .log-box { background: #000; height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
+            .log-box { background: #000; height: 180px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
             .reply { background: #0f172a; padding: 10px; border-radius: 10px; font-size: 0.8rem; border-left: 4px solid var(--acc); margin: 12px 0; white-space: pre-wrap; }
         </style>
     </head>
@@ -86,7 +87,9 @@ def index():
                     <span id="pl" class="stat-val" style="font-size: 1.6rem;">0</span>
                 </div>
                 <div class="stat-box"><span class="label">Coins Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
+                <div class="stat-box"><span class="label">Coins Yesterday</span><span id="py" class="stat-val">+0</span></div>
                 <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
+                <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val">0</span></div>
             </div>
             <div class="label">Latest Bot Response</div>
             <div class="reply" id="reply">...</div>
@@ -99,7 +102,9 @@ def index():
                     const d = await res.json();
                     document.getElementById('timer').innerText = d.timer;
                     document.getElementById('wt').innerText = d.wt;
+                    document.getElementById('wy').innerText = d.wy;
                     document.getElementById('pt').innerText = '+' + d.pt; 
+                    document.getElementById('py').innerText = '+' + d.py; 
                     document.getElementById('pl').innerText = d.pl.toLocaleString();
                     document.getElementById('reply').innerText = d.reply;
                     document.getElementById('status').innerText = d.status;
