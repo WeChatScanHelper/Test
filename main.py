@@ -233,7 +233,7 @@ async def main_logic():
 
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
                 if now_match: coins_lifetime = int(now_match.group(1).replace(',', ''))
-                gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
+                gain_match = re.search(r'Change:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
                     if gain_match: coins_today += int(gain_match.group(1))
