@@ -24,9 +24,9 @@ total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
 waits_yesterday = 0
-points_today = 0
-points_yesterday = 0
-points_lifetime = 0  
+coins_today = 0
+coins_yesterday = 0
+coins_lifetime = 0  
 is_muted = False 
 is_running = False  
 next_run_time = None
@@ -43,7 +43,7 @@ def add_log(text):
     clean_text = text.replace("@", "")
     timestamp = get_ph_time().strftime('%H:%M:%S')
     bot_logs.insert(0, f"[{timestamp}] {clean_text}")
-    if len(bot_logs) > 50: bot_logs.pop()
+    if len(bot_logs) > 100: bot_logs.pop()
 
 # --- WEB UI ---
 @app.route('/')
@@ -58,7 +58,7 @@ def index():
             :root { --bg: #0f172a; --card: #1e293b; --acc: #38bdf8; --text: #f8fafc; }
             body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; justify-content: center; }
             .card { width: 100%; max-width: 500px; background: var(--card); padding: 20px; border-radius: 24px; border: 1px solid #334155; }
-            .timer { font-size: 3.5rem; font-weight: 900; text-align: center; margin: 5px 0; }
+            .timer { font-size: 3rem; font-weight: 900; text-align: center; margin: 5px 0; color: #fbbf24; }
             .status-badge { font-size: 0.7rem; font-weight: 800; text-align: center; margin-bottom: 10px; text-transform: uppercase; }
             .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
             .stat-box { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 12px; border: 1px solid #334155; }
@@ -66,7 +66,7 @@ def index():
             .label { font-size: 0.55rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; }
             .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
             .btn { padding: 12px; border-radius: 10px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.75rem; transition: 0.2s; }
-            .log-box { background: #000; height: 160px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
+            .log-box { background: #000; height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
             .reply { background: #0f172a; padding: 10px; border-radius: 10px; font-size: 0.8rem; border-left: 4px solid var(--acc); margin: 12px 0; white-space: pre-wrap; }
         </style>
     </head>
@@ -82,15 +82,11 @@ def index():
             </div>
             <div class="stats-grid">
                 <div class="stat-box" style="grid-column: span 2; text-align: center; border-color: var(--acc);">
-                    <span class="label" style="color: var(--acc);">Lifetime Total Points</span>
+                    <span class="label" style="color: var(--acc);">Lifetime Total Coins</span>
                     <span id="pl" class="stat-val" style="font-size: 1.6rem;">0</span>
                 </div>
-                <div class="stat-box"><span class="label">Pts Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
-                <div class="stat-box"><span class="label">Pts Yesterday</span><span id="py" class="stat-val">+0</span></div>
-                <div class="stat-box"><span class="label">Grow Today</span><span id="gt" class="stat-val">0</span></div>
-                <div class="stat-box"><span class="label">Grow Yesterday</span><span id="gy" class="stat-val">0</span></div>
+                <div class="stat-box"><span class="label">Coins Today</span><span id="pt" class="stat-val" style="color:#4ade80">+0</span></div>
                 <div class="stat-box"><span class="label">Wait Today</span><span id="wt" class="stat-val" style="color:#fbbf24">0</span></div>
-                <div class="stat-box"><span class="label">Wait Yesterday</span><span id="wy" class="stat-val">0</span></div>
             </div>
             <div class="label">Latest Bot Response</div>
             <div class="reply" id="reply">...</div>
@@ -102,9 +98,8 @@ def index():
                     const res = await fetch('/api/data');
                     const d = await res.json();
                     document.getElementById('timer').innerText = d.timer;
-                    document.getElementById('gt').innerText = d.gt; document.getElementById('gy').innerText = d.gy;
-                    document.getElementById('wt').innerText = d.wt; document.getElementById('wy').innerText = d.wy;
-                    document.getElementById('pt').innerText = '+' + d.pt; document.getElementById('py').innerText = '+' + d.py;
+                    document.getElementById('wt').innerText = d.wt;
+                    document.getElementById('pt').innerText = '+' + d.pt; 
                     document.getElementById('pl').innerText = d.pl.toLocaleString();
                     document.getElementById('reply').innerText = d.reply;
                     document.getElementById('status').innerText = d.status;
@@ -128,10 +123,14 @@ def get_data():
         s, c = "🟢 ACTIVE", "#34d399"
         if next_run_time:
             diff = int((next_run_time - ph_now).total_seconds())
-            t_str = f"{max(0, diff)}s"
+            if diff > 0:
+                m, s_rem = divmod(diff, 60)
+                t_str = f"{m}m {s_rem}s"
+            else:
+                t_str = "READY"
     return jsonify({
         "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
-        "pt": points_today, "py": points_yesterday, "pl": points_lifetime, 
+        "pt": coins_today, "py": coins_yesterday, "pl": coins_lifetime, 
         "wt": waits_today, "wy": waits_yesterday,
         "reply": last_bot_reply.replace("@", ""), "status": s, "color": c, "logs": bot_logs
     })
@@ -140,68 +139,78 @@ def get_data():
 def start_bot(): 
     global is_running, force_trigger, is_muted
     is_running = True; force_trigger = True; is_muted = False
-    add_log("▶ RESUME: Listening and Growing.")
+    add_log("▶ RESUME: Smart Sync Enabled.")
     return "OK"
 
 @app.route('/stop')
 def stop_bot(): 
     global is_running, next_run_time, is_muted
     is_running = False; next_run_time = None; is_muted = False
-    add_log("■ STOP: Idle but still reading chat.")
+    add_log("■ STOP: Automation paused.")
     return "OK"
 
 @app.route('/restart')
 def restart_bot(): 
     global is_running, force_trigger, is_muted
     is_running = True; force_trigger = True; is_muted = False
-    add_log("🔄 FORCE: Command sent."); return "OK"
+    add_log("🔄 FORCE: Command sent manually."); return "OK"
 
 @app.route('/clear_logs')
 def clear_logs(): 
     global bot_logs; bot_logs = ["Logs cleared."]; return "OK"
 
 async def main_logic():
-    global last_bot_reply, total_grows_today, total_grows_yesterday, points_today, points_yesterday, points_lifetime, waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day, is_muted
+    global last_bot_reply, total_grows_today, total_grows_yesterday, coins_today, coins_yesterday, coins_lifetime, waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day, is_muted
     
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-    # PERMANENT LISTENER: Always reads even when loop is stopped
     @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
-        global last_bot_reply, points_today, points_lifetime, total_grows_today, waits_today, is_muted
+        global last_bot_reply, coins_today, coins_lifetime, total_grows_today, waits_today, is_muted, next_run_time, force_trigger
         
-        # Auto-read to clear the blue @ mention badge
         try: await client.send_read_acknowledge(event.chat_id, max_id=event.id)
         except: pass
 
         if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text
-            # Identify mentions (handles both @Name and Name)
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
-                # Sync Total Points
+                
+                # --- SMART WAIT DETECTION ---
+                if "please wait" in msg.lower():
+                    waits_today += 1
+                    wait_m = re.search(r'(\d+)m', msg)
+                    wait_s = re.search(r'(\d+)s', msg)
+                    
+                    total_wait_secs = 0
+                    if wait_m: total_wait_secs += int(wait_m.group(1)) * 60
+                    if wait_s: total_wait_secs += int(wait_s.group(1))
+                    
+                    if total_wait_secs > 0:
+                        # Sync internal timer to exactly what the bot wants (+5s safety)
+                        next_run_time = get_ph_time() + timedelta(seconds=total_wait_secs + 5)
+                        add_log(f"🕒 Bot busy. Syncing timer to: {total_wait_secs + 5}s")
+                        force_trigger = True # Break current sleep to adopt new time
+
+                # --- COIN & GROWTH TRACKING ---
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
                 if now_match:
-                    points_lifetime = int(now_match.group(1).replace(',', ''))
-                # Track Grows
+                    coins_lifetime = int(now_match.group(1).replace(',', ''))
+                
                 gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
-                    if gain_match: points_today += int(gain_match.group(1))
-                # Track Waits
-                if "please wait" in msg.lower():
-                    waits_today += 1
+                    if gain_match: coins_today += int(gain_match.group(1))
 
     async with client:
         add_log("Permanent Listener Connected.")
         target_group = await client.get_entity(GROUP_TARGET)
         
         while True:
-            # Date Reset Logic
             ph_now = get_ph_time()
             if ph_now.day != current_day:
-                total_grows_yesterday, waits_yesterday, points_yesterday = total_grows_today, waits_today, points_today
-                total_grows_today, waits_today, points_today = 0, 0, 0
+                total_grows_yesterday, waits_yesterday, coins_yesterday = total_grows_today, waits_today, coins_today
+                total_grows_today, waits_today, coins_today = 0, 0, 0
                 current_day = ph_now.day
 
             if is_running:
@@ -209,26 +218,26 @@ async def main_logic():
                     async with client.action(target_group, 'typing'):
                         await asyncio.sleep(random.uniform(2, 4))
                         await client.send_message(target_group, "/grow")
-                        # If message sent successfully, we are not muted
-                        if is_muted:
-                            is_muted = False
-                            add_log("🔓 Unmuted: Resuming 35s cycle.")
+                        add_log("📤 Sent /grow")
+                        if is_muted: is_muted = False
                 except errors.ChatWriteForbiddenError:
                     is_muted = True
                     add_log("🚫 Muted: Retrying in 60s...")
                 except Exception as e:
                     add_log(f"⚠️ Error: {str(e)[:20]}")
 
-                # Calculate next wait time based on mute status
-                wait_duration = 60 if is_muted else 35
-                next_run_time = get_ph_time() + timedelta(seconds=wait_duration)
+                # Default wait is 1 hour (3600s) unless the handler updates next_run_time
+                wait_duration = 60 if is_muted else 3600
+                if not next_run_time or get_ph_time() >= next_run_time:
+                    next_run_time = get_ph_time() + timedelta(seconds=wait_duration)
                 
-                for _ in range(wait_duration):
-                    if force_trigger or not is_running:
-                        force_trigger = False; break
+                # Sleep loop
+                while get_ph_time() < next_run_time and is_running:
+                    if force_trigger:
+                        force_trigger = False
+                        break
                     await asyncio.sleep(1)
             else:
-                # Idle state
                 await asyncio.sleep(1)
 
 def run_flask():
