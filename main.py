@@ -187,13 +187,13 @@ def get_data():
             "no_reply_streak": no_reply_streak
         }
     })
-
 # ================= RUN FLASK =================
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 # ================= TELEGRAM LOGIC =================
-async def main_logic():
+
+                async def main_logic():
     global last_bot_reply, total_grows_today, total_grows_yesterday, coins_today, coins_yesterday, coins_lifetime
     global waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day
     global retry_used, grow_sent_at, STATE, awaiting_bot_reply
@@ -207,8 +207,20 @@ async def main_logic():
         global next_run_time, awaiting_bot_reply, retry_used, grow_sent_at
         global STATE, no_reply_streak, shadow_ban_flag, learned_cooldown
 
-        if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.lower():
+        # --- 1. READ EVERYTHING ---
+        # This part clears the blue @ notification for ALL messages in the group
+        try:
+            await client.send_read_acknowledge(event.chat_id, max_id=event.id)
+        except:
+            pass
+
+        # --- 2. BOT SPECIFIC LOGIC ---
+        # We only run the point-tracking if the sender is the Bot
+        sender = await event.get_sender()
+        if sender and sender.username and sender.username.lower() == BOT_USERNAME.strip('@').lower():
             msg = event.text or ""
+            
+            # Check if YOU are mentioned in the bot's message
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
                 awaiting_bot_reply = False
@@ -217,7 +229,7 @@ async def main_logic():
                 STATE = "COOLDOWN"
                 no_reply_streak = 0
 
-                # Check wait timer in bot message
+                # Check wait timer
                 if "please wait" in msg.lower():
                     waits_today += 1
                     wait_m = re.search(r'(\d+)m', msg)
@@ -229,27 +241,32 @@ async def main_logic():
                     cooldown_history.append(total_wait)
                     if len(cooldown_history) > 5: cooldown_history.pop(0)
 
-                    # Detect cooldown traps
+                    # Cooldown trap detection
                     if cooldown_history.count(total_wait) >= 3 and total_wait <= 120:
                         extra = random.randint(180,420)
                         total_wait += extra
-                        add_log(f"⚠️ Cooldown trap detected → +{extra}s")
+                        add_log(f"⚠️ Cooldown trap → +{extra}s")
 
                     learned_cooldown = int(learned_cooldown*0.7 + total_wait*0.3)
                     next_run_time = get_ph_time() + timedelta(seconds=total_wait + 5)
                     return
 
-                # Coins parsing
+                # Coins & Success parsing
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
-                if now_match: coins_lifetime = int(now_match.group(1).replace(',', ''))
+                if now_match: 
+                    coins_lifetime = int(now_match.group(1).replace(',', ''))
+                
                 gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
-                    if gain_match: coins_today += int(gain_match.group(1))
+                    if gain_match: 
+                        coins_today += int(gain_match.group(1))
 
     async with client:
-        add_log("Permanent Listener Connected.")
+        add_log("Permanent Listener Connected. Reading all chat.")
         target_group = await client.get_entity(GROUP_TARGET)
+        
+        # ... (Rest of your while True loop remains exactly the same)
 
         while True:
             ph_now = get_ph_time()
