@@ -1,3 +1,5 @@
+Can you check if there's an issue here or good to run 
+
 import os
 import asyncio
 import random
@@ -187,13 +189,13 @@ def get_data():
             "no_reply_streak": no_reply_streak
         }
     })
+
 # ================= RUN FLASK =================
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 # ================= TELEGRAM LOGIC =================
-
-                async def main_logic():
+async def main_logic():
     global last_bot_reply, total_grows_today, total_grows_yesterday, coins_today, coins_yesterday, coins_lifetime
     global waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day
     global retry_used, grow_sent_at, STATE, awaiting_bot_reply
