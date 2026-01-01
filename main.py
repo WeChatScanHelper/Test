@@ -4,56 +4,73 @@ import random
 import threading
 import re
 from datetime import datetime, timedelta, timezone
-from flask import Flask, request, redirect, url_for, jsonify
-from telethon import TelegramClient, events, errors, functions
+from flask import Flask, jsonify
+from telethon import TelegramClient, events, errors
 from telethon.sessions import StringSession
 
-# --- CONFIGURATION ---
+# ================= CONFIG =================
 API_ID = int(os.getenv("API_ID", 36062585))
 API_HASH = os.getenv("API_HASH", "27af3370413767173feb169bec5065f9")
-SESSION_STRING = os.getenv("SESSION_STRING") 
+SESSION_STRING = os.getenv("SESSION_STRING")
 
-GROUP_TARGET = -1003598172312 
+GROUP_TARGET = -1003598172312
 MY_NAME = "AryaCollymore"
 BOT_USERNAME = "FkerKeyBot"
 
-# --- PERSISTENT TRACKING ---
+# ================= STATE =================
 last_bot_reply = "System Online."
 bot_logs = ["Listener Active. Reading all chat..."]
+
 total_grows_today = 0
 total_grows_yesterday = 0
 waits_today = 0
 waits_yesterday = 0
 coins_today = 0
 coins_yesterday = 0
-coins_lifetime = 0  
-is_muted = False 
-is_running = False  
+coins_lifetime = 0
+
+is_muted = False
+is_running = False
 next_run_time = None
-force_trigger = False 
+force_trigger = False
 current_day = datetime.now(timezone(timedelta(hours=8))).day
 
-app = Flask(__name__)
+# ================= DEBUG/STATE MACHINE =================
+STATE = "IDLE"
 
+grow_sent_at = None
+retry_used = False
+MAX_REPLY_WAIT = 25
+
+cooldown_history = []
+learned_cooldown = 3605
+
+no_reply_streak = 0
+shadow_ban_flag = False
+awaiting_bot_reply = False
+
+# ================= UTILS =================
 def get_ph_time():
     return datetime.now(timezone(timedelta(hours=8)))
 
 def add_log(text):
-    global bot_logs
-    clean_text = text.replace("@", "")
-    timestamp = get_ph_time().strftime('%H:%M:%S')
-    bot_logs.insert(0, f"[{timestamp}] {clean_text}")
-    if len(bot_logs) > 100: bot_logs.pop()
+    ts = get_ph_time().strftime("%H:%M:%S")
+    bot_logs.insert(0, f"[{ts}] {text.replace('@','')}")
+    if len(bot_logs) > 100:
+        bot_logs.pop()
 
-# --- WEB UI ---
+# ================= WEB UI =================
+app = Flask(__name__)
+
 @app.route('/')
 def index():
     return """
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <title>PH Turbo Admin</title>
+        <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PH Turbo Admin</title>
         <style>
             :root { --bg: #0f172a; --card: #1e293b; --acc: #38bdf8; --text: #f8fafc; }
             body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; justify-content: center; }
@@ -68,6 +85,7 @@ def index():
             .btn { padding: 12px; border-radius: 10px; border: none; font-weight: 800; cursor: pointer; color: white; font-size: 0.75rem; transition: 0.2s; }
             .log-box { background: #000; height: 180px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.7rem; border-radius: 10px; color: #4ade80; border: 1px solid #334155; }
             .reply { background: #0f172a; padding: 10px; border-radius: 10px; font-size: 0.8rem; border-left: 4px solid var(--acc); margin: 12px 0; white-space: pre-wrap; }
+            .debug { background: #111; padding: 8px; border-radius: 8px; font-size: 0.65rem; border-left: 4px solid #fbbf24; margin: 8px 0; color: #facc15; white-space: pre-wrap; }
         </style>
     </head>
     <body>
@@ -92,6 +110,11 @@ def index():
             </div>
             <div class="label">Latest Bot Response</div>
             <div class="reply" id="reply">...</div>
+            
+            <!-- DEBUG OVERLAY ADDED -->
+            <div class="label">Debug Info</div>
+            <div class="debug" id="debug">...</div>
+            
             <div class="log-box" id="logs"></div>
         </div>
         <script>
@@ -102,13 +125,21 @@ def index():
                     document.getElementById('timer').innerText = d.timer;
                     document.getElementById('wt').innerText = d.wt;
                     document.getElementById('wy').innerText = d.wy;
-                    document.getElementById('pt').innerText = '+' + d.pt; 
-                    document.getElementById('py').innerText = '+' + d.py; 
+                    document.getElementById('pt').innerText = '+' + d.pt;
+                    document.getElementById('py').innerText = '+' + d.py;
                     document.getElementById('pl').innerText = d.pl.toLocaleString();
                     document.getElementById('reply').innerText = d.reply;
                     document.getElementById('status').innerText = d.status;
                     document.getElementById('status').style.color = d.color;
                     document.getElementById('logs').innerHTML = d.logs.map(l => `<div>${l}</div>`).join('');
+
+                    // Update debug info
+                    document.getElementById('debug').innerText =
+                        "State: " + d.debug.state + "\\n" +
+                        "Retry Used: " + d.debug.retry_used + "\\n" +
+                        "Shadow-ban Warning: " + d.debug.shadow_ban_warning + "\\n" +
+                        "Learned Cooldown: " + d.debug.learned_cd + "\\n" +
+                        "No Reply Streak: " + d.debug.no_reply_streak;
                 } catch (e) {}
             }
             setInterval(update, 1000);
@@ -121,83 +152,96 @@ def index():
 def get_data():
     ph_now = get_ph_time()
     t_str = "--"
-    if is_muted: s, c, t_str = "⚠️ MUTED (1m RETRY)", "#fbbf24", "MUTE"
-    elif not is_running: s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
-    else:
-        s, c = "🟢 ACTIVE", "#34d399"
-        if next_run_time:
-            diff = int((next_run_time - ph_now).total_seconds())
-            if diff > 0:
-                m, s_rem = divmod(diff, 60)
-                t_str = f"{m}m {s_rem}s"
-            else:
-                t_str = "READY"
+    s, c = "🟢 ACTIVE", "#34d399"
+
+    if is_muted:
+        s, c, t_str = "⚠️ MUTED (1m RETRY)", "#fbbf24", "MUTE"
+    elif not is_running:
+        s, c, t_str = "🛑 STOPPED", "#f87171", "OFF"
+    elif next_run_time:
+        diff = int((next_run_time - ph_now).total_seconds())
+        if diff > 0:
+            m, s_rem = divmod(diff, 60)
+            t_str = f"{m}m {s_rem}s"
+        else:
+            t_str = "READY"
+
     return jsonify({
-        "timer": t_str, "gt": total_grows_today, "gy": total_grows_yesterday,
-        "pt": coins_today, "py": coins_yesterday, "pl": coins_lifetime, 
-        "wt": waits_today, "wy": waits_yesterday,
-        "reply": last_bot_reply.replace("@", ""), "status": s, "color": c, "logs": bot_logs
+        "timer": t_str,
+        "gt": total_grows_today,
+        "gy": total_grows_yesterday,
+        "pt": coins_today,
+        "py": coins_yesterday,
+        "pl": coins_lifetime,
+        "wt": waits_today,
+        "wy": waits_yesterday,
+        "reply": last_bot_reply.replace("@", ""),
+        "status": s,
+        "color": c,
+        "logs": bot_logs,
+        "debug": {
+            "state": STATE,
+            "retry_used": retry_used,
+            "shadow_ban_warning": shadow_ban_flag,
+            "learned_cd": learned_cooldown,
+            "no_reply_streak": no_reply_streak
+        }
     })
 
-@app.route('/start')
-def start_bot(): 
-    global is_running, force_trigger, is_muted
-    is_running = True; force_trigger = True; is_muted = False
-    add_log("▶ RESUME: Smart Sync Enabled.")
-    return "OK"
+# ================= RUN FLASK =================
+def run_flask():
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-@app.route('/stop')
-def stop_bot(): 
-    global is_running, next_run_time, is_muted
-    is_running = False; next_run_time = None; is_muted = False
-    add_log("■ STOP: Automation paused.")
-    return "OK"
-
-@app.route('/restart')
-def restart_bot(): 
-    global is_running, force_trigger, is_muted
-    is_running = True; force_trigger = True; is_muted = False
-    add_log("🔄 FORCE: Command sent manually."); return "OK"
-
-@app.route('/clear_logs')
-def clear_logs(): 
-    global bot_logs; bot_logs = ["Logs cleared."]; return "OK"
-
+# ================= TELEGRAM LOGIC =================
 async def main_logic():
-    global last_bot_reply, total_grows_today, total_grows_yesterday, coins_today, coins_yesterday, coins_lifetime, waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day, is_muted
-    
+    global last_bot_reply, total_grows_today, total_grows_yesterday, coins_today, coins_yesterday, coins_lifetime
+    global waits_today, waits_yesterday, is_running, force_trigger, next_run_time, current_day
+    global retry_used, grow_sent_at, STATE, awaiting_bot_reply
+    global no_reply_streak, shadow_ban_flag, learned_cooldown, is_muted
+
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
     @client.on(events.NewMessage(chats=GROUP_TARGET))
     async def handler(event):
-        global last_bot_reply, coins_today, coins_lifetime, total_grows_today, waits_today, is_muted, next_run_time, force_trigger
-        
-        try: await client.send_read_acknowledge(event.chat_id, max_id=event.id)
-        except: pass
+        global last_bot_reply, coins_today, coins_lifetime, total_grows_today, waits_today
+        global next_run_time, awaiting_bot_reply, retry_used, grow_sent_at
+        global STATE, no_reply_streak, shadow_ban_flag, learned_cooldown
 
-        if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.strip('@').lower():
-            msg = event.text
+        if event.sender_id and str(event.sender.username).lower() == BOT_USERNAME.lower():
+            msg = event.text or ""
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 last_bot_reply = msg
-                
+                awaiting_bot_reply = False
+                retry_used = False
+                grow_sent_at = None
+                STATE = "COOLDOWN"
+                no_reply_streak = 0
+
+                # Check wait timer in bot message
                 if "please wait" in msg.lower():
                     waits_today += 1
                     wait_m = re.search(r'(\d+)m', msg)
                     wait_s = re.search(r'(\d+)s', msg)
-                    
-                    total_wait_secs = 0
-                    if wait_m: total_wait_secs += int(wait_m.group(1)) * 60
-                    if wait_s: total_wait_secs += int(wait_s.group(1))
-                    
-                    if total_wait_secs > 0:
-                        next_run_time = get_ph_time() + timedelta(seconds=total_wait_secs + 5)
-                        add_log(f"🕒 Bot busy. Syncing timer to: {total_wait_secs + 5}s")
-                        force_trigger = True 
+                    total_wait = 0
+                    if wait_m: total_wait += int(wait_m.group(1))*60
+                    if wait_s: total_wait += int(wait_s.group(1))
 
+                    cooldown_history.append(total_wait)
+                    if len(cooldown_history) > 5: cooldown_history.pop(0)
+
+                    # Detect cooldown traps
+                    if cooldown_history.count(total_wait) >= 3 and total_wait <= 120:
+                        extra = random.randint(180,420)
+                        total_wait += extra
+                        add_log(f"⚠️ Cooldown trap detected → +{extra}s")
+
+                    learned_cooldown = int(learned_cooldown*0.7 + total_wait*0.3)
+                    next_run_time = get_ph_time() + timedelta(seconds=total_wait + 5)
+                    return
+
+                # Coins parsing
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
-                if now_match:
-                    coins_lifetime = int(now_match.group(1).replace(',', ''))
-                
+                if now_match: coins_lifetime = int(now_match.group(1).replace(',', ''))
                 gain_match = re.search(r'Gained:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
@@ -206,7 +250,7 @@ async def main_logic():
     async with client:
         add_log("Permanent Listener Connected.")
         target_group = await client.get_entity(GROUP_TARGET)
-        
+
         while True:
             ph_now = get_ph_time()
             if ph_now.day != current_day:
@@ -215,35 +259,57 @@ async def main_logic():
                 current_day = ph_now.day
 
             if is_running:
-                # 1. Wait until the timer hits 0
-                if next_run_time and get_ph_time() < next_run_time and not force_trigger:
+                # Wait until timer is ready
+                if next_run_time and ph_now < next_run_time and not force_trigger:
+                    STATE = "WAIT_TIMER"
                     await asyncio.sleep(1)
                     continue
 
-                # 2. Timer hit 0 or force triggered - SEND MESSAGE
+                # Retry detection
+                if awaiting_bot_reply and grow_sent_at:
+                    elapsed = (ph_now - grow_sent_at).total_seconds()
+                    if elapsed > MAX_REPLY_WAIT and not retry_used:
+                        retry_used = True
+                        awaiting_bot_reply = False
+                        force_trigger = True
+                        no_reply_streak += 1
+                        add_log("🔁 No reply → retrying once")
+                    elif elapsed > MAX_REPLY_WAIT*2:
+                        no_reply_streak += 1
+                        awaiting_bot_reply = False
+
+                # Shadow-ban warning only
+                if no_reply_streak >= 3:
+                    shadow_ban_flag = True
+                    extra_delay = random.randint(300,900)
+                    next_run_time = get_ph_time() + timedelta(seconds=extra_delay)
+                    add_log(f"🛡️ Shadow-ban suspected → warning only (+{extra_delay}s delay)")
+                    no_reply_streak = 0
+
+                # Send /grow
                 try:
+                    STATE = "SENDING"
                     async with client.action(target_group, 'typing'):
-                        await asyncio.sleep(random.uniform(2, 4))
+                        await asyncio.sleep(random.uniform(2,4))
                         await client.send_message(target_group, "/grow")
                         add_log("📤 Sent /grow")
-                        if is_muted: is_muted = False
+                        awaiting_bot_reply = True
+                        grow_sent_at = get_ph_time()
                         force_trigger = False
-                        
-                        # Set default next run to 1 hour (3605s) after sending
-                        next_run_time = get_ph_time() + timedelta(seconds=3605)
+                        next_run_time = get_ph_time() + timedelta(seconds=learned_cooldown)
+                        STATE = "WAIT_REPLY"
+                        if is_muted: is_muted = False
                 except errors.ChatWriteForbiddenError:
                     is_muted = True
-                    add_log("🚫 Muted: Retrying in 60s...")
                     next_run_time = get_ph_time() + timedelta(seconds=60)
+                    add_log("🚫 Muted → retry in 60s")
                 except Exception as e:
-                    add_log(f"⚠️ Error: {str(e)[:20]}")
                     next_run_time = get_ph_time() + timedelta(seconds=30)
+                    add_log(f"⚠️ Error: {str(e)[:40]}")
             else:
                 await asyncio.sleep(1)
 
-def run_flask():
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-
+# ================= RUN =================
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
     asyncio.run(main_logic())
