@@ -1,5 +1,3 @@
-Can you check if there's an issue here or good to run 
-
 import os
 import asyncio
 import random
