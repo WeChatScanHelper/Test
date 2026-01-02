@@ -41,7 +41,7 @@ grow_sent_at = None
 retry_used = False
 MAX_REPLY_WAIT = 25
 cooldown_history = []
-learned_cooldown = 3605
+learned_cooldown = 3610
 no_reply_streak = 0
 shadow_ban_flag = False
 awaiting_bot_reply = False
@@ -194,11 +194,9 @@ async def main_logic():
         global last_bot_reply, coins_today, coins_lifetime, total_grows_today, waits_today
         global next_run_time, awaiting_bot_reply, retry_used, grow_sent_at, STATE, no_reply_streak, shadow_ban_flag, learned_cooldown
 
-        # 1. READ ALL CHATS (Clears blue @ button for EVERY message)
         try: await client.send_read_acknowledge(event.chat_id, max_id=event.id)
         except: pass
 
-        # 2. FILTER ONLY FOR BOT LOGIC
         sender = await event.get_sender()
         bot_target = BOT_USERNAME.replace("@", "").lower()
         
@@ -212,6 +210,7 @@ async def main_logic():
                 STATE = "COOLDOWN"
                 no_reply_streak = 0
 
+                # OPTION 1: BOT SAYS WAIT (OVERWRITES 1 HOUR)
                 if "please wait" in msg.lower():
                     waits_today += 1
                     wait_m = re.search(r'(\d+)m', msg)
@@ -220,23 +219,21 @@ async def main_logic():
                     if wait_m: total_wait += int(wait_m.group(1))*60
                     if wait_s: total_wait += int(wait_s.group(1))
                     
-                    cooldown_history.append(total_wait)
-                    if len(cooldown_history) > 5: cooldown_history.pop(0)
-                    if cooldown_history.count(total_wait) >= 3 and total_wait <= 120:
-                        extra = random.randint(180,420)
-                        total_wait += extra
-                        add_log(f"⚠️ Trap → +{extra}s")
-                    
-                    learned_cooldown = int(learned_cooldown*0.7 + total_wait*0.3)
                     next_run_time = get_ph_time() + timedelta(seconds=total_wait + 5)
+                    add_log(f"🕒 Wait detected: {total_wait}s")
                     return
 
+                # OPTION 2: SUCCESS OR CHANGE (SETS TO 1 HOUR)
                 now_match = re.search(r'Now:\s*([\d,]+)', msg)
                 if now_match: coins_lifetime = int(now_match.group(1).replace(',', ''))
+                
                 gain_match = re.search(r'Change:\s*\+?(-?\d+)', msg)
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
                     if gain_match: coins_today += int(gain_match.group(1))
+                    # FORCE 1 HOUR ON SUCCESS
+                    next_run_time = get_ph_time() + timedelta(hours=1, seconds=10)
+                    add_log("✅ Success! Next grow in 1 hour.")
 
     async with client:
         add_log("Permanent Listener Connected. Reading all chat.")
@@ -273,7 +270,8 @@ async def main_logic():
                         await client.send_message(target_group, "/grow")
                         add_log("📤 Sent /grow")
                         awaiting_bot_reply = True; grow_sent_at = get_ph_time(); force_trigger = False
-                        next_run_time = get_ph_time() + timedelta(seconds=learned_cooldown)
+                        # DEFAULT TO 1 HOUR AFTER SENDING
+                        next_run_time = get_ph_time() + timedelta(hours=1, seconds=10)
                         STATE = "WAIT_REPLY"
                         if is_muted: is_muted = False
                 except errors.ChatWriteForbiddenError:
