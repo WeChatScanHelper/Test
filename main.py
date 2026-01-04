@@ -37,6 +37,7 @@ next_run_time = None
 force_trigger = False
 current_day = datetime.now(timezone(timedelta(hours=8))).day
 
+
 # ================= DEBUG/STATE MACHINE =================
 STATE = "IDLE"
 grow_sent_at = None
@@ -310,7 +311,7 @@ async def stay_active_loop(client):
                 if not messages:
                     continue
 
-                if random.random() < 0.8:
+                if random.random() < 0.2:
                     target_msg = random.choice(messages)
                     await client(functions.messages.SendReactionRequest(
                         peer=GROUP_TARGET,
@@ -321,7 +322,7 @@ async def stay_active_loop(client):
                     ))
                     add_log("💓 Activity: Reacted to a message")
                 else:
-                    fillers = ["lol", "damn", "nice", "gg", "wow"]
+                    fillers = ["angas", "solid", "gg", "grind lang ng grind", "ok", "sige", "ayos", "pwede", "tama", "noted", "copy", "seen", "andito", "online", "active", "present", "ready", "go", "teka", "sandali", "wait", "balik", "here", "ayos na", "ok na", "sige na", "pwede na"]
                     async with client.action(GROUP_TARGET, 'typing'):
                         await asyncio.sleep(random.uniform(2, 5))
                         await client.send_message(GROUP_TARGET, random.choice(fillers))
