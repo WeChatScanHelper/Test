@@ -284,7 +284,7 @@ async def main_logic(client):
                     awaiting_bot_reply = True
                     grow_sent_at = get_ph_time()
                     force_trigger = False
-                    next_run_time = get_ph_time() + timedelta(hours=1, seconds=10)
+                    next_run_time = get_ph_time() + timedelta(hours=0, seconds=180) 
                     STATE = "WAIT_REPLY"
                     if is_muted: is_muted = False
             except errors.ChatWriteForbiddenError:
