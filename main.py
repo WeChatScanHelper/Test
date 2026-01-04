@@ -304,6 +304,7 @@ async def stay_active_loop(client):
     while True:
         if stay_active_enabled:
             try:
+                # Set wait time to 2-3 minutes (120 to 180 seconds)
                 wait_time = random.randint(120, 180)
                 await asyncio.sleep(wait_time)
 
@@ -317,6 +318,10 @@ async def stay_active_loop(client):
                 
                 add_log(f"💓 Activity: Sent filler chat (Next in {wait_time}s)")
 
+            except Exception as e:
+                add_log(f"⚠️ Activity Error: {str(e)[:20]}")
+        else:
+            await asyncio.sleep(5)
 
 async def start_all():
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
