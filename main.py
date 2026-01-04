@@ -283,6 +283,49 @@ async def main_logic():
             else:
                 await asyncio.sleep(1)
 
+    async def stay_active_loop(client):
+    while is_running:
+        try:
+            # Wait between 3 to 4 minutes (to beat the 5-min check)
+            wait_time = random.randint(180, 260)
+            await asyncio.sleep(wait_time)
+
+            # Get the last few messages in the group
+            messages = await client.get_messages(GROUP_TARGET, limit=5)
+            if not messages:
+                continue
+
+            # 80% chance to just add a reaction (very safe)
+            if random.random() < 0.8:
+                target_msg = random.choice(messages)
+                await client(functions.messages.SendReactionRequest(
+                    peer=GROUP_TARGET,
+                    msg_id=target_msg.id,
+                    reaction=[types.ReactionEmoji(emoticon=random.choice(['👍', '🔥', '❤️', '🤩']))]
+                ))
+                add_log("💓 Activity: Reacted to a message")
+            
+            # 20% chance to send a "filler" word
+            else:
+                fillers = ["lol", "damn", "nice", "gg", "wow"]
+                async with client.action(GROUP_TARGET, 'typing'):
+                    await asyncio.sleep(random.uniform(2, 5))
+                    await client.send_message(GROUP_TARGET, random.choice(fillers))
+                add_log("💓 Activity: Sent filler chat")
+
+        except Exception as e:
+            add_log(f"⚠️ Activity Error: {str(e)[:20]}")
+            
+    async def start_all():
+        client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+        await client.start()
+    
+        # Run both loops simultaneously
+        await asyncio.gather(
+           main_logic(client), 
+           stay_active_loop(client)
+        )
+
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
-    asyncio.run(main_logic())
+    asyncio.run(start_all())
