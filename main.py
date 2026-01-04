@@ -14,7 +14,7 @@ API_HASH = os.getenv("API_HASH", "27af3370413767173feb169bec5065f9")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
 GROUP_TARGET = -1003621946413
-MY_NAME = "AryaCollymore"
+MY_NAME = "Hey_Knee"
 BOT_USERNAME = "FkerKeyRPSBot"
 
 # ================= STATE =================
