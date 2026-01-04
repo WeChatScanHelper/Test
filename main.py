@@ -304,34 +304,18 @@ async def stay_active_loop(client):
     while True:
         if stay_active_enabled:
             try:
-                wait_time = random.randint(180, 260)
+                wait_time = random.randint(120, 180)
                 await asyncio.sleep(wait_time)
 
-                messages = await client.get_messages(GROUP_TARGET, limit=5)
-                if not messages:
-                    continue
-
-                if random.random() < 0.2:
-                    target_msg = random.choice(messages)
-                    await client(functions.messages.SendReactionRequest(
-                        peer=GROUP_TARGET,
-                        msg_id=target_msg.id,
-                        reaction=[types.ReactionEmoji(
-                            emoticon=random.choice(['👍', '🔥', '❤️', '🤩'])
-                        )]
-                    ))
-                    add_log("💓 Activity: Reacted to a message")
-                else:
-                    fillers = ["angas", "solid", "gg", "grind lang ng grind", "ok", "sige", "ayos", "pwede", "tama", "noted", "copy", "seen", "andito", "online", "active", "present", "ready", "go", "teka", "sandali", "wait", "balik", "here", "ayos na", "ok na", "sige na", "pwede na"]
-                    async with client.action(GROUP_TARGET, 'typing'):
-                        await asyncio.sleep(random.uniform(2, 5))
-                        await client.send_message(GROUP_TARGET, random.choice(fillers))
-                    add_log("💓 Activity: Sent filler chat")
-
-            except Exception as e:
-                add_log(f"⚠️ Activity Error: {str(e)[:20]}")
-        else:
-            await asyncio.sleep(5)
+                # List of filler words
+                fillers = ["angas", "solid", "gg", "grind lang ng grind", "ok", "sige", "ayos", "pwede", "tama", "noted", "copy", "seen", "andito", "online", "active", "present", "ready", "go", "teka", "sandali", "wait", "balik", "here", "ayos na", "ok na", "sige na", "pwede na"]
+                
+                # Logic: Always send a filler message
+                async with client.action(GROUP_TARGET, 'typing'):
+                    await asyncio.sleep(random.uniform(2, 5)) # Simulate typing
+                    await client.send_message(GROUP_TARGET, random.choice(fillers))
+                
+                add_log(f"💓 Activity: Sent filler chat (Next in {wait_time}s)")
 
 
 async def start_all():
