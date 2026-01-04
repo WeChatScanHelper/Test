@@ -237,7 +237,7 @@ async def main_logic(client):
                 if "GROW SUCCESS" in msg.upper() or gain_match:
                     total_grows_today += 1
                     if gain_match: coins_today += int(gain_match.group(1))
-                    next_run_time = get_ph_time() + timedelta(hours=1, seconds=10)
+                    next_run_time = get_ph_time() + timedelta(hours=0, seconds=180)
                     add_log("✅ Success! Next grow in 1 hour.")
 
     add_log("Permanent Listener Connected. Reading all chat.")
