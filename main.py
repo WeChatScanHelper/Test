@@ -32,6 +32,7 @@ MyAutoTimer = 30
 
 is_muted = False
 is_running = False
+stay_active_enabled = True
 next_run_time = None
 force_trigger = False
 current_day = datetime.now(timezone(timedelta(hours=8))).day
@@ -300,7 +301,7 @@ async def main_logic(client):
 
 async def stay_active_loop(client):
     while True:
-        if is_running:
+        if stay_active_enabled:
             try:
                 wait_time = random.randint(180, 260)
                 await asyncio.sleep(wait_time)
@@ -314,7 +315,9 @@ async def stay_active_loop(client):
                     await client(functions.messages.SendReactionRequest(
                         peer=GROUP_TARGET,
                         msg_id=target_msg.id,
-                        reaction=[types.ReactionEmoji(emoticon=random.choice(['👍', '🔥', '❤️', '🤩']))]
+                        reaction=[types.ReactionEmoji(
+                            emoticon=random.choice(['👍', '🔥', '❤️', '🤩'])
+                        )]
                     ))
                     add_log("💓 Activity: Reacted to a message")
                 else:
@@ -328,6 +331,7 @@ async def stay_active_loop(client):
                 add_log(f"⚠️ Activity Error: {str(e)[:20]}")
         else:
             await asyncio.sleep(5)
+
 
 async def start_all():
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
