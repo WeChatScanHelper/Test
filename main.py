@@ -215,6 +215,16 @@ async def main_logic(client):
             msg = event.text or ""
             if MY_NAME.lower() in msg.lower().replace("@", ""):
                 await client.send_read_acknowledge(event.chat_id, max_id=event.id)
+
+                await client.send_read_acknowledge(event.chat_id, max_id=event.id)
+                
+                # 2. Specifically kills the "@" badge
+                try:
+                    await client(functions.messages.ReadMentionsRequest(peer=event.chat_id))
+                except Exception:
+                    pass
+                
+               
                 last_bot_reply = msg
                 awaiting_bot_reply = False
                 retry_used = False
