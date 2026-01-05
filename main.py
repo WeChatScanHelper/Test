@@ -214,6 +214,7 @@ async def main_logic(client):
         if sender and sender.username and sender.username.lower() == bot_target:
             msg = event.text or ""
             if MY_NAME.lower() in msg.lower().replace("@", ""):
+                await client.send_read_acknowledge(event.chat_id, max_id=event.id)
                 last_bot_reply = msg
                 awaiting_bot_reply = False
                 retry_used = False
