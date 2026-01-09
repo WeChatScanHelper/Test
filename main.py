@@ -316,18 +316,19 @@ async def stay_active_loop(client):
         if stay_active_enabled:
             try:
                 # Set wait time to 2-3 minutes (120 to 180 seconds)
-                wait_time = random.randint(120, 180)
-                await asyncio.sleep(wait_time)
+        #        wait_time = 10
+                await asyncio.sleep(10)
 
                 # List of filler words
-                fillers = ["angas", "solid", "gg", "grind lang ng grind", "ok", "sige", "ayos", "pwede", "tama", "noted", "copy", "seen", "andito", "online", "active", "present", "ready", "go", "teka", "sandali", "wait", "balik", "here", "ayos na", "ok na", "sige na", "pwede na"]
-                
-                # Logic: Always send a filler message
-                async with client.action(GROUP_TARGET, 'typing'):
-                    await asyncio.sleep(random.uniform(2, 5)) # Simulate typing
-                    await client.send_message(GROUP_TARGET, random.choice(fillers))
-                
-                add_log(f"💓 Activity: Sent filler chat (Next in {wait_time}s)")
+                messages = await client.get_messages(GROUP_TARGET, limit=10)
+                if messages:
+                    target_msg = random.choice(messages)
+                    await client(functions.messages.SendReactionRequest(
+                        peer=GROUP_TARGET, 
+                        msg_id=target_msg.id,
+                        reaction=[types.ReactionEmoji(emoticon=random.choice(['👍', '🔥', '❤️', '💯', '👀']))]
+                    ))
+                    add_log("💓 Activity: Reacted")
 
             except Exception as e:
                 add_log(f"⚠️ Activity Error: {str(e)[:20]}")
