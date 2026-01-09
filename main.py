@@ -320,7 +320,7 @@ async def stay_active_loop(client):
                 await asyncio.sleep(10)
 
                 # List of filler words
-                messages = await client.get_messages(GROUP_TARGET, limit=10)
+                messages = await client.get_messages(GROUP_TARGET, limit=15)
                 if messages:
                     target_msg = random.choice(messages)
                     await client(functions.messages.SendReactionRequest(
