@@ -295,9 +295,9 @@ async def main_logic(client):
                     next_run_time = get_ph_time() + timedelta(hours=0, seconds=MyAutoTimer)
                     add_log(f"✅ Success! Next grow in {MyAutoTimer}s.")
                     
-                    if coins_lifetime >= 40:
-                           await client.send_message(BOT_USERNAME, f"/redeem -f 40")
-                           coins_lifetime -= 40
+                    if coins_lifetime >= 1000:
+                           await client.send_message(BOT_USERNAME, f"/redeem -p 1000")
+                           coins_lifetime -= 1000
                            add_log(f"✔ Redeem Successfully!")
                     else:
                        pass
