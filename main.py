@@ -220,10 +220,15 @@ async def main_logic(client):
                     
                     # Construct the message for Saved Messages
                     save_text = (
-                        f"🏆 **REDEEM SUCCESS**\n"
-                        f"📅 **Date:** `{timestamp}`\n"
-                        f"🔑 **Key:** `{license_key}`\n"
-                        f"🤖 **Bot:** @{BOT_USERNAME}"
+                         f"╭━━━━━━━ ★ ━━━━━━━╮\n"
+                         f"   🏆 **REDEEM SUCCESS**\n"
+                         f"╰━━━━━━━ ★ ━━━━━━━╯\n"
+                         f"📅 **Date:** `{timestamp}`\n"
+                         f"🔑 **Key:** `{license_key}`\n"
+                         f"🤖 **Bot:** @{BOT_USERNAME}\n"
+                         f"━━━━━━━━━━━━━━━━━━━━\n"
+                         f"  👑 **Creator:** @Hey_Knee  \n"
+                         f"╰━━━━━━━ ✨ ━━━━━━━╯"
                     )
                     
                     try:
@@ -290,12 +295,12 @@ async def main_logic(client):
                     next_run_time = get_ph_time() + timedelta(hours=0, seconds=MyAutoTimer)
                     add_log(f"✅ Success! Next grow in {MyAutoTimer}s.")
                     
-                    if coins_lifetime >= 1000:
-                           await client.send_message(BOT_USERNAME, f"/redeem -f 1000")
-                           coins_lifetime -= 1000
+                    if coins_lifetime >= 40:
+                           await client.send_message(BOT_USERNAME, f"/redeem -f 40")
+                           coins_lifetime -= 40
                            add_log(f"✔ Redeem Successfully!")
-                        else:
-                           pass
+                    else:
+                       pass
 
     add_log("Permanent Listener Connected. Reading all chat.")
     target_group = await client.get_entity(GROUP_TARGET)
