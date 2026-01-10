@@ -227,7 +227,7 @@ async def main_logic(client):
                          f"🔑 **Key:** `{license_key}`\n"
                          f"🤖 **Bot:** @{BOT_USERNAME}\n"
                          f"━━━━━━━━━━━━━━━━━━━━\n"
-                         f"  👑 **Creator:** @Hey_Knee  \n"
+                         f"   👑 **Creator:** @Hey_Knee  \n"
                          f"╰━━━━━━━ ✨ ━━━━━━━╯"
                     )
                     
